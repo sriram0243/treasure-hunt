@@ -1,0 +1,13 @@
+{
+  "name": "college-treasure-hunt",
+  "version": "1.0.0",
+  "description": "Full-Stack 7-Stage Interactive College Treasure Hunt Web Application",
+  "scripts": {
+    "start": "cd backend && npm start",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "generate-qr": "cd backend && npm run generate-qr",
+    "build": "cd frontend && npm run build",
+    "vercel-build": "cd backend && npm install && cd ../frontend && npm install && npm run build"
+  }
+}

@@ -1,0 +1,114 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Outfit:wght@300;400;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --font-heading: 'Cinzel', serif;
+  --font-body: 'Outfit', sans-serif;
+  --color-bg-dark: #071912;
+  --color-bg-card: #0D261E;
+  --color-gold: #F59E0B;
+  --color-gold-bright: #FBBF24;
+  --color-parchment: #F7E7CE;
+  --color-leather: #2B1B12;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-bg-dark);
+  color: #E2E8F0;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.15), transparent 70%),
+    radial-gradient(circle at 100% 100%, rgba(13, 38, 30, 0.8), transparent 50%),
+    radial-gradient(circle at 0% 50%, rgba(5, 26, 18, 0.9), transparent 50%);
+  background-attachment: fixed;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: var(--font-heading);
+  letter-spacing: 0.05em;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #071912;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E4637;
+  border-radius: 4px;
+  border: 1px solid #F59E0B;
+}
+
+/* Parchment Texture Card */
+.parchment-card {
+  background: linear-gradient(135deg, #F9ECCB 0%, #F5E3B8 50%, #EBD59F 100%);
+  color: #2D1A08;
+  border: 2px solid #B8860B;
+  box-shadow: 
+    0 10px 30px rgba(0, 0, 0, 0.6),
+    inset 0 0 15px rgba(139, 69, 19, 0.3);
+  position: relative;
+}
+
+.parchment-card::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px dashed rgba(139, 69, 19, 0.4);
+  pointer-events: none;
+}
+
+/* Gold Glowing Text & Borders */
+.text-gold-glow {
+  color: #FBBF24;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.6), 0 0 24px rgba(245, 158, 11, 0.3);
+}
+
+.border-gold-glow {
+  border-color: #F59E0B;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+}
+
+/* Animations */
+@keyframes compass-spin {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(180deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-compass {
+  animation: compass-spin 20s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+@keyframes scanner-laser {
+  0% { top: 0%; opacity: 0.8; }
+  50% { top: 95%; opacity: 1; }
+  100% { top: 0%; opacity: 0.8; }
+}
+
+.animate-laser {
+  animation: scanner-laser 2.5s ease-in-out infinite;
+}
+
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-float {
+  animation: float-gentle 4s ease-in-out infinite;
+}
