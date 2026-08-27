@@ -1,25 +1,14 @@
-const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
 
-const getAsync = (sql, params = []) =>
-  new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
-  });
-
-const allAsync = (sql, params = []) =>
-  new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
-  });
-
-const runAsync = (sql, params = []) =>
-  new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
+const Team = require('../models/Team');
+const User = require('../models/User');
+const Stage = require('../models/Stage');
+const Hunt = require('../models/Hunt');
+const AppSettings = require('../models/AppSettings');
+const ScanAttempt = require('../models/ScanAttempt');
+const Feedback = require('../models/Feedback');
 
 function formatDuration(totalSeconds) {
   if (!totalSeconds || isNaN(totalSeconds)) return 'N/A';
@@ -30,15 +19,20 @@ function formatDuration(totalSeconds) {
 }
 
 // Admin Login
-exports.login = (req, res) => {
-  const { username, password } = req.body;
+exports.login = async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
 
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Username and password required.' });
-  }
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password required.' });
+    }
 
-  db.get("SELECT * FROM users WHERE username = LOWER(?) AND role = 'ADMIN'", [username.trim()], (err, adminUser) => {
-    if (err || !adminUser) {
+    const adminUser = await User.findOne({
+      username: username.trim().toLowerCase(),
+      role: 'ADMIN'
+    });
+
+    if (!adminUser) {
       return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
     }
 
@@ -48,7 +42,7 @@ exports.login = (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: adminUser.id, username: adminUser.username, role: 'ADMIN' },
+      { id: adminUser._id, username: adminUser.username, role: 'ADMIN' },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -56,9 +50,11 @@ exports.login = (req, res) => {
     res.json({
       success: true,
       token,
-      admin: { id: adminUser.id, username: adminUser.username, name: adminUser.name }
+      admin: { id: adminUser._id, username: adminUser.username, name: adminUser.name }
     });
-  });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Admin login error.' });
+  }
 };
 
 // Admin Dashboard Stats & Real-Time Monitoring
@@ -83,135 +79,114 @@ exports.getDashboardStats = async (req, res) => {
       settings: {}
     };
 
-    // 1. App settings
-    const settings = await getAsync("SELECT * FROM app_settings WHERE id = 1");
+    // 1. App Settings
+    const settings = await AppSettings.findOne();
     if (settings) {
       stats.settings = settings;
       stats.max_total_participants = settings.max_total_participants || 150;
     }
 
     // 2. Hunt status & Winner
-    const huntRow = await getAsync(
-      "SELECT h.*, t.team_name as winner_name FROM hunt h LEFT JOIN teams t ON h.winner_team_id = t.id WHERE h.id = 1"
-    );
+    const huntRow = await Hunt.findOne();
     if (huntRow) {
       stats.hunt_status = huntRow.status;
       if (huntRow.winner_team_id) {
+        const winTeam = await Team.findById(huntRow.winner_team_id);
         stats.winner_team = {
           id: huntRow.winner_team_id,
-          team_name: huntRow.winner_name,
+          team_name: winTeam ? winTeam.team_name : huntRow.winner_team_name,
           completed_at: huntRow.winner_completed_at
         };
       }
     }
 
-    // 3. Total Participants Count (sum of member_count across teams)
-    const partRow = await getAsync("SELECT COALESCE(SUM(member_count), 0) as total FROM teams");
-    if (partRow) {
-      stats.total_participants = partRow.total || 0;
-    }
+    // 3. Total Participants Count
+    const partAgg = await Team.aggregate([
+      { $group: { _id: null, total: { $sum: '$member_count' } } }
+    ]);
+    stats.total_participants = partAgg.length > 0 ? partAgg[0].total : 0;
     stats.spots_remaining = Math.max(0, stats.max_total_participants - stats.total_participants);
 
     // 4. Scan stats
-    const scanRow = await getAsync(
-      "SELECT COUNT(*) as total, SUM(CASE WHEN is_success = 1 THEN 1 ELSE 0 END) as success FROM scan_attempts"
-    );
-    if (scanRow) {
-      stats.total_scans = scanRow.total || 0;
-      stats.successful_scans = scanRow.success || 0;
-      stats.failed_scans = stats.total_scans - stats.successful_scans;
-    }
+    const totalScans = await ScanAttempt.countDocuments();
+    const successScans = await ScanAttempt.countDocuments({ is_success: true });
+    stats.total_scans = totalScans;
+    stats.successful_scans = successScans;
+    stats.failed_scans = totalScans - successScans;
 
-    // 5. Scan logs
-    try {
-      const scanLogs = await allAsync(
-        `SELECT sa.*, t.team_name, u.name as user_name, u.role
-         FROM scan_attempts sa
-         LEFT JOIN teams t ON sa.team_id = t.id
-         LEFT JOIN users u ON sa.user_id = u.id
-         ORDER BY sa.scanned_at DESC LIMIT 50`
-      );
-      stats.recent_scan_logs = scanLogs || [];
-    } catch (e) {
-      stats.recent_scan_logs = await allAsync("SELECT * FROM scan_attempts ORDER BY scanned_at DESC LIMIT 50").catch(() => []);
-    }
-
+    // 5. Recent Scan logs
+    const scanLogs = await ScanAttempt.find().sort({ scanned_at: -1 }).limit(50);
+    stats.recent_scan_logs = scanLogs.map(s => ({
+      id: s._id,
+      team_id: s.team_id,
+      user_id: s.user_id,
+      team_name: s.team_name || 'N/A',
+      user_name: s.user_name || 'N/A',
+      role: s.role || 'N/A',
+      scanned_token: s.scanned_token,
+      is_success: s.is_success ? 1 : 0,
+      stage_number: s.stage_number,
+      message: s.message,
+      scanned_at: s.scanned_at
+    }));
 
     // 6. Feedback list
-    const feedbackRows = await allAsync("SELECT * FROM feedback ORDER BY created_at DESC");
+    const feedbackRows = await Feedback.find().sort({ created_at: -1 });
     stats.feedback_list = feedbackRows || [];
 
     // 7. Teams list with stage breakdown
-    let rawTeams = [];
-    try {
-      rawTeams = await allAsync(
-        `SELECT t.*, u.name as leader_name,
-                COALESCE(t.member_count, 5) as member_count,
-                (SELECT COUNT(*) FROM stage_completions sc WHERE sc.team_id = t.id) as completed_stages
-         FROM teams t
-         LEFT JOIN users u ON t.leader_user_id = u.id
-         ORDER BY completed_stages DESC, t.created_at ASC`
-      );
-    } catch (e) {
-      console.warn("Teams query fallback:", e.message);
-      rawTeams = await allAsync("SELECT t.*, u.name as leader_name FROM teams t LEFT JOIN users u ON t.leader_user_id = u.id").catch(() => []);
-    }
+    const rawTeams = await Team.find().populate('leader_user_id', 'name');
+    const stagesList = await Stage.find().sort({ stage_number: 1 });
+    const stageMap = {};
+    stagesList.forEach(s => { stageMap[s.stage_number] = s; });
 
-    stats.total_teams = (rawTeams || []).length;
-    stats.completed_teams = (rawTeams || []).filter(t => (t.completed_stages || 0) >= 7).length;
+    stats.total_teams = rawTeams.length;
+    stats.completed_teams = rawTeams.filter(t => (t.completed_stages || []).length >= 7).length;
     stats.active_teams = stats.total_teams - stats.completed_teams;
 
-    const teamsDetailed = [];
-    if (rawTeams && rawTeams.length > 0) {
-      for (let idx = 0; idx < rawTeams.length; idx++) {
-        const t = rawTeams[idx];
-        let stageOrder = [];
-        try {
-          stageOrder = await allAsync(
-            `SELECT tso.position, s.stage_number, s.title, s.mission_description
-             FROM team_stage_order tso
-             JOIN stages s ON tso.stage_id = s.id
-             WHERE tso.team_id = ?
-             ORDER BY tso.position ASC`,
-            [t.id]
-          );
-        } catch (e) {
-          stageOrder = [];
-        }
+    const teamsDetailed = rawTeams.map((t, idx) => {
+      const leaderName = t.leader_user_id ? t.leader_user_id.name : 'Leader';
+      const completedCount = (t.completed_stages || []).length;
 
-        let completedStages = [];
-        try {
-          completedStages = await allAsync(
-            `SELECT s.stage_number, sc.completed_at
-             FROM stage_completions sc
-             JOIN stages s ON sc.stage_id = s.id
-             WHERE sc.team_id = ?
-             ORDER BY sc.position ASC`,
-            [t.id]
-          );
-        } catch (e) {
-          completedStages = [];
-        }
+      const stageOrderDetails = (t.stage_order || []).map(so => {
+        const stgData = stageMap[so.stage_number] || {};
+        return {
+          position: so.position,
+          stage_number: so.stage_number,
+          title: stgData.title || `Stage ${so.stage_number}`,
+          mission_description: stgData.mission_description || ''
+        };
+      });
 
-        teamsDetailed.push({
-          rank: idx + 1,
-          id: t.id,
-          team_name: t.team_name,
-          leader_name: t.leader_name || 'Leader',
-          member_count: t.member_count || 5,
-          status: (completedStages.length >= 7) ? 'COMPLETED' : t.status,
-          completed_stages_count: completedStages.length || t.completed_stages || 0,
-          started_at: t.started_at,
-          completed_at: t.completed_at,
-          stage_order: (stageOrder || []).map(so => so.stage_number),
-          stage_order_details: stageOrder || [],
-          completed_stages: completedStages || []
-        });
-      }
-    }
+      const completedStagesDetails = (t.completed_stages || []).map(cs => {
+        const stgData = stageMap[cs.stage_number] || {};
+        return {
+          position: cs.position,
+          stage_number: cs.stage_number,
+          title: stgData.title || `Stage ${cs.stage_number}`,
+          completed_at: cs.completed_at
+        };
+      });
 
+      return {
+        rank: idx + 1,
+        id: t._id,
+        team_name: t.team_name,
+        leader_name: leaderName,
+        member_count: t.member_count || 5,
+        status: completedCount >= 7 ? 'COMPLETED' : t.status,
+        completed_stages_count: completedCount,
+        started_at: t.started_at,
+        completed_at: t.completed_at,
+        stage_order: (t.stage_order || []).map(so => so.stage_number),
+        stage_order_details: stageOrderDetails,
+        completed_stages: completedStagesDetails
+      };
+    });
 
     teamsDetailed.sort((a, b) => b.completed_stages_count - a.completed_stages_count);
+    teamsDetailed.forEach((t, idx) => { t.rank = idx + 1; });
+
     stats.teams_list = teamsDetailed;
     stats.leaderboard = teamsDetailed;
 
@@ -226,56 +201,62 @@ exports.getDashboardStats = async (req, res) => {
 exports.getTeamDetails = async (req, res) => {
   try {
     const teamId = req.params.id;
-    const team = await getAsync(
-      "SELECT t.*, u.name as leader_name FROM teams t LEFT JOIN users u ON t.leader_user_id = u.id WHERE t.id = ?",
-      [teamId]
-    );
+    const team = await Team.findById(teamId).populate('leader_user_id', 'name');
 
     if (!team) {
       return res.status(404).json({ success: false, error: 'Team not found.' });
     }
 
-    const members = await allAsync(
-      "SELECT u.id, u.name, u.role, u.created_at FROM users u WHERE u.team_id = ?",
-      [teamId]
-    );
+    const members = await User.find({ team_id: teamId }).select('_id name role created_at');
+    const stagesList = await Stage.find();
+    const stageMap = {};
+    stagesList.forEach(s => { stageMap[s.stage_number] = s; });
 
-    const stageOrder = await allAsync(
-      `SELECT tso.position, s.stage_number, s.title, s.mission_description, s.clue_text
-       FROM team_stage_order tso
-       JOIN stages s ON tso.stage_id = s.id
-       WHERE tso.team_id = ?
-       ORDER BY tso.position ASC`,
-      [teamId]
-    );
+    const stageOrder = (team.stage_order || []).map(so => {
+      const stg = stageMap[so.stage_number] || {};
+      return {
+        position: so.position,
+        stage_number: so.stage_number,
+        title: stg.title || `Stage ${so.stage_number}`,
+        mission_description: stg.mission_description || '',
+        clue_text: stg.clue_text || ''
+      };
+    });
 
-    const completions = await allAsync(
-      `SELECT sc.position, s.stage_number, s.title, sc.completed_at
-       FROM stage_completions sc
-       JOIN stages s ON sc.stage_id = s.id
-       WHERE sc.team_id = ?
-       ORDER BY sc.position ASC`,
-      [teamId]
-    );
+    const completions = (team.completed_stages || []).map(cs => {
+      const stg = stageMap[cs.stage_number] || {};
+      return {
+        position: cs.position,
+        stage_number: cs.stage_number,
+        title: stg.title || `Stage ${cs.stage_number}`,
+        completed_at: cs.completed_at
+      };
+    });
 
     res.json({
       success: true,
       team: {
-        ...team,
+        id: team._id,
+        team_name: team.team_name,
+        leader_name: team.leader_user_id ? team.leader_user_id.name : 'Leader',
+        status: team.status,
+        member_count: team.member_count,
+        started_at: team.started_at,
+        completed_at: team.completed_at,
         members: members || [],
         stage_order: stageOrder || [],
         completions: completions || []
       }
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to fetch team details.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch team details.' });
   }
 };
 
 // Admin Manual End Hunt Button
 exports.endHuntManually = async (req, res) => {
   try {
-    await runAsync("UPDATE hunt SET status = 'CLOSED', ended_at = CURRENT_TIMESTAMP WHERE id = 1");
+    await Hunt.findOneAndUpdate({}, { status: 'CLOSED', ended_at: new Date() }, { upsert: true });
 
     const io = req.app.get('io');
     if (io) {
@@ -296,14 +277,15 @@ exports.endHuntManually = async (req, res) => {
 // Admin Reset All Hunt & Team Data (Start Fresh)
 exports.resetAllHuntData = async (req, res) => {
   try {
-    await runAsync("DELETE FROM team_members");
-    await runAsync("DELETE FROM stage_completions");
-    await runAsync("DELETE FROM team_stage_order");
-    await runAsync("DELETE FROM scan_attempts");
-    await runAsync("DELETE FROM feedback");
-    await runAsync("DELETE FROM users WHERE role != 'ADMIN'");
-    await runAsync("DELETE FROM teams");
-    await runAsync("UPDATE hunt SET status = 'LIVE', winner_team_id = NULL, winner_completed_at = NULL, ended_at = NULL WHERE id = 1");
+    await User.deleteMany({ role: { $ne: 'ADMIN' } });
+    await Team.deleteMany({});
+    await ScanAttempt.deleteMany({});
+    await Feedback.deleteMany({});
+    await Hunt.findOneAndUpdate(
+      {},
+      { status: 'LIVE', winner_team_id: null, winner_team_name: null, winner_completed_at: null, ended_at: null },
+      { upsert: true }
+    );
 
     const io = req.app.get('io');
     if (io) {
@@ -322,17 +304,21 @@ exports.resetAllHuntData = async (req, res) => {
   }
 };
 
-
 // Update App Settings
 exports.updateSettings = async (req, res) => {
   try {
-    const { min_team_members, default_team_members, max_team_members, max_total_participants } = req.body;
+    const { min_team_members, default_team_members, max_team_members, max_total_participants } = req.body || {};
 
-    await runAsync(
-      `UPDATE app_settings 
-       SET min_team_members = ?, default_team_members = ?, max_team_members = ?, max_total_participants = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = 1`,
-      [min_team_members || 4, default_team_members || 5, max_team_members || 10, max_total_participants || 150]
+    await AppSettings.findOneAndUpdate(
+      {},
+      {
+        min_team_members: min_team_members || 4,
+        default_team_members: default_team_members || 5,
+        max_team_members: max_team_members || 10,
+        max_total_participants: max_total_participants || 150,
+        updated_at: new Date()
+      },
+      { upsert: true, new: true }
     );
 
     res.json({ success: true, message: 'Settings updated successfully.' });
@@ -344,23 +330,29 @@ exports.updateSettings = async (req, res) => {
 // Admin Update Team Member Count by Team Name / ID
 exports.updateTeamMemberCount = async (req, res) => {
   try {
-    const { team_id, team_name, member_count } = req.body;
+    const { team_id, team_name, member_count } = req.body || {};
     const count = parseInt(member_count);
 
     if (isNaN(count) || count < 1) {
       return res.status(400).json({ success: false, error: 'Member count must be a positive integer.' });
     }
 
-    await runAsync(
-      "UPDATE teams SET member_count = ? WHERE id = ? OR LOWER(team_name) = LOWER(?)",
-      [count, team_id || 0, (team_name || '').trim()]
-    );
+    let team;
+    if (team_id) {
+      team = await Team.findByIdAndUpdate(team_id, { member_count: count }, { new: true });
+    } else if (team_name) {
+      team = await Team.findOneAndUpdate(
+        { team_name: { $regex: new RegExp(`^${team_name.trim()}$`, 'i') } },
+        { member_count: count },
+        { new: true }
+      );
+    }
 
     const io = req.app.get('io');
-    if (io) {
+    if (io && team) {
       io.to('admin').emit('team_count_updated', {
-        team_id,
-        team_name,
+        team_id: team._id,
+        team_name: team.team_name,
         member_count: count
       });
     }
@@ -377,22 +369,16 @@ exports.updateTeamMemberCount = async (req, res) => {
 // Get QR Codes List
 exports.getQRCodes = async (req, res) => {
   try {
-    const rows = await allAsync(
-      `SELECT q.*, s.stage_number, s.title, s.mission_description 
-       FROM qr_codes q 
-       JOIN stages s ON q.stage_id = s.id 
-       ORDER BY s.stage_number ASC`
-    );
+    const stages = await Stage.find().sort({ stage_number: 1 });
 
-    const qrs = (rows || []).map(r => {
-      const stagePad = r.stage_number.toString().padStart(2, '0');
-      const token = r.secure_token || r.token || `TH_STAGE${r.stage_number}_MARK`;
+    const qrs = stages.map(s => {
+      const stagePad = s.stage_number.toString().padStart(2, '0');
       return {
-        id: r.id,
-        stage_number: r.stage_number,
-        title: r.title,
-        mission: r.mission_description,
-        token: token,
+        id: s._id,
+        stage_number: s.stage_number,
+        title: s.title,
+        mission: s.mission_description,
+        token: s.qr_token,
         png_filename: `qr-stage-${stagePad}.png`,
         svg_filename: `qr-stage-${stagePad}.svg`,
         png_url: `/qr-codes/qr-stage-${stagePad}.png`,
@@ -410,7 +396,7 @@ exports.getQRCodes = async (req, res) => {
 // Get All 7 Stages for Admin Editing
 exports.getStages = async (req, res) => {
   try {
-    const stages = await allAsync("SELECT * FROM stages ORDER BY stage_number ASC");
+    const stages = await Stage.find().sort({ stage_number: 1 });
     res.json({ success: true, stages: stages || [] });
   } catch (err) {
     console.error("getStages error:", err);
@@ -422,7 +408,7 @@ exports.getStages = async (req, res) => {
 exports.updateStage = async (req, res) => {
   try {
     const stageId = req.params.id;
-    const { title, mission_description, clue_text } = req.body;
+    const { title, mission_description, clue_text } = req.body || {};
 
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, error: 'Stage heading/title is required.' });
@@ -431,14 +417,20 @@ exports.updateStage = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Stage question/mission description is required.' });
     }
 
-    await runAsync(
-      `UPDATE stages 
-       SET title = ?, mission_description = ?, clue_text = ? 
-       WHERE id = ? OR stage_number = ?`,
-      [title.trim(), mission_description.trim(), (clue_text || '').trim(), stageId, stageId]
-    );
-
-    const updatedStage = await getAsync("SELECT * FROM stages WHERE id = ? OR stage_number = ?", [stageId, stageId]);
+    let updatedStage;
+    if (stageId.match(/^[0-9a-fA-F]{24}$/)) {
+      updatedStage = await Stage.findByIdAndUpdate(
+        stageId,
+        { title: title.trim(), mission_description: mission_description.trim(), clue_text: (clue_text || '').trim() },
+        { new: true }
+      );
+    } else {
+      updatedStage = await Stage.findOneAndUpdate(
+        { stage_number: parseInt(stageId) },
+        { title: title.trim(), mission_description: mission_description.trim(), clue_text: (clue_text || '').trim() },
+        { new: true }
+      );
+    }
 
     const io = req.app.get('io');
     if (io) {
@@ -457,6 +449,3 @@ exports.updateStage = async (req, res) => {
     res.status(500).json({ success: false, error: err.message || 'Failed to update stage.' });
   }
 };
-
-
-

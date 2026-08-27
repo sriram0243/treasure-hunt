@@ -1,7 +1,14 @@
-const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
+
+const Team = require('../models/Team');
+const User = require('../models/User');
+const Stage = require('../models/Stage');
+const Hunt = require('../models/Hunt');
+const AppSettings = require('../models/AppSettings');
+const ScanAttempt = require('../models/ScanAttempt');
+const Feedback = require('../models/Feedback');
 
 // Helper: Shuffle array [1,2,3,4,5,6] and append 7
 function generateShuffledStageOrder() {
@@ -10,711 +17,673 @@ function generateShuffledStageOrder() {
     const j = Math.floor(Math.random() * (i + 1));
     [stages[i], stages[j]] = [stages[j], stages[i]];
   }
-  return [...stages, 7];
+  const sequence = [...stages, 7];
+  return sequence.map((stageNum, posIdx) => ({
+    position: posIdx + 1,
+    stage_number: stageNum
+  }));
 }
 
 // Get Capacity & Settings
-exports.getCapacityAndSettings = (req, res) => {
-  db.serialize(() => {
-    db.get("SELECT * FROM app_settings WHERE id = 1", [], (err, settings) => {
-      const appSettings = settings || {
-        min_team_members: 4,
-        default_team_members: 5,
-        max_team_members: 10,
-        max_total_participants: 150
-      };
+exports.getCapacityAndSettings = async (req, res) => {
+  try {
+    const settings = (await AppSettings.findOne()) || {
+      min_team_members: 4,
+      default_team_members: 5,
+      max_team_members: 10,
+      max_total_participants: 150
+    };
 
-      db.get(
-        "SELECT COALESCE(SUM(member_count), 0) AS total FROM teams",
-        [],
-        (err, row) => {
-          const currentCount = row ? row.total : 0;
-          const maxCapacity = appSettings.max_total_participants || 150;
-          const spotsRemaining = Math.max(0, maxCapacity - currentCount);
+    const agg = await Team.aggregate([
+      { $group: { _id: null, total: { $sum: '$member_count' } } }
+    ]);
+    const currentCount = agg.length > 0 ? agg[0].total : 0;
+    const maxCapacity = settings.max_total_participants || 150;
+    const spotsRemaining = Math.max(0, maxCapacity - currentCount);
 
-          res.json({
-            success: true,
-            capacity: {
-              current_total_members: currentCount,
-              max_total_participants: maxCapacity,
-              spots_remaining: spotsRemaining,
-              is_full: currentCount >= maxCapacity
-            },
-            settings: appSettings
-          });
-        }
-      );
+    res.json({
+      success: true,
+      capacity: {
+        current_total_members: currentCount,
+        max_total_participants: maxCapacity,
+        spots_remaining: spotsRemaining,
+        is_full: currentCount >= maxCapacity
+      },
+      settings
     });
-  });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
 };
 
 // Register Team (Leader Name + Team Name)
-exports.registerTeam = (req, res) => {
-  const { team_name, leader_name } = req.body;
+exports.registerTeam = async (req, res) => {
+  try {
+    const { team_name, leader_name } = req.body || {};
 
-  if (!team_name || !team_name.trim()) {
-    return res.status(400).json({ success: false, error: 'Team name is required.' });
-  }
-  if (!leader_name || !leader_name.trim()) {
-    return res.status(400).json({ success: false, error: 'Team Leader name is required.' });
-  }
+    if (!team_name || !team_name.trim()) {
+      return res.status(400).json({ success: false, error: 'Team name is required.' });
+    }
+    if (!leader_name || !leader_name.trim()) {
+      return res.status(400).json({ success: false, error: 'Team Leader name is required.' });
+    }
 
-  const cleanTeamName = team_name.trim();
-  const cleanLeaderName = leader_name.trim();
+    const cleanTeamName = team_name.trim();
+    const cleanLeaderName = leader_name.trim();
 
-  db.serialize(() => {
-    db.get("SELECT * FROM app_settings WHERE id = 1", [], (err, settings) => {
-      const defaultCount = settings ? settings.default_team_members : 5;
-      const maxParticipants = settings ? settings.max_total_participants : 150;
+    const settings = (await AppSettings.findOne()) || { default_team_members: 5, max_total_participants: 150 };
+    const defaultCount = settings.default_team_members || 5;
+    const maxParticipants = settings.max_total_participants || 150;
 
-      db.get("SELECT COALESCE(SUM(member_count), 0) AS total FROM teams", [], (err, row) => {
-        const currentTotal = row ? row.total : 0;
-        if (currentTotal + defaultCount > maxParticipants) {
-          return res.status(400).json({
-            success: false,
-            code: 'CAPACITY_REACHED',
-            error: 'The Treasure Hunt has reached the maximum participant capacity.'
-          });
-        }
+    const agg = await Team.aggregate([
+      { $group: { _id: null, total: { $sum: '$member_count' } } }
+    ]);
+    const currentTotal = agg.length > 0 ? agg[0].total : 0;
 
-        db.get("SELECT id FROM teams WHERE LOWER(team_name) = LOWER(?)", [cleanTeamName], (err, existingTeam) => {
-          if (existingTeam) {
-            return res.status(400).json({
-              success: false,
-              code: 'DUPLICATE_TEAM_NAME',
-              error: 'This team name is already taken. Please choose another name.'
-            });
-          }
-
-          db.run(
-            "INSERT INTO teams (team_name, member_count, status) VALUES (?, ?, 'ACTIVE')",
-            [cleanTeamName, defaultCount],
-            function (err) {
-              if (err) {
-                return res.status(400).json({
-                  success: false,
-                  code: 'DUPLICATE_TEAM_NAME',
-                  error: 'This team name is already taken. Please choose another name.'
-                });
-              }
-
-              const teamId = this.lastID;
-              const defaultPassHash = bcrypt.hashSync(`leader_${teamId}`, 10);
-
-              db.run(
-                "INSERT INTO users (name, password_hash, role, team_id) VALUES (?, ?, 'TEAM_LEADER', ?)",
-                [cleanLeaderName, defaultPassHash, teamId],
-                function (err) {
-                  if (err) {
-                    return res.status(500).json({ success: false, error: 'Failed to create team leader user.' });
-                  }
-
-                  const leaderUserId = this.lastID;
-                  db.run("UPDATE teams SET leader_user_id = ? WHERE id = ?", [leaderUserId, teamId]);
-                  db.run("INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, 'TEAM_LEADER')", [teamId, leaderUserId]);
-
-                  // Generate randomized 7-stage order for this team
-                  db.all("SELECT id, stage_number FROM stages ORDER BY stage_number ASC", [], (err, allStages) => {
-                    if (err || !allStages || allStages.length < 7) {
-                      return res.status(500).json({ success: false, error: 'Stages missing in system.' });
-                    }
-
-                    const stageMap = {};
-                    allStages.forEach(s => { stageMap[s.stage_number] = s.id; });
-                    const shuffledSequence = generateShuffledStageOrder();
-
-                    shuffledSequence.forEach((stageNum, posIdx) => {
-                      const stageId = stageMap[stageNum];
-                      db.run(
-                        "INSERT INTO team_stage_order (team_id, position, stage_id) VALUES (?, ?, ?)",
-                        [teamId, posIdx + 1, stageId]
-                      );
-                    });
-
-                    const token = jwt.sign(
-                      {
-                        id: leaderUserId,
-                        name: cleanLeaderName,
-                        role: 'TEAM_LEADER',
-                        team_id: teamId,
-                        team_name: cleanTeamName
-                      },
-                      JWT_SECRET,
-                      { expiresIn: '24h' }
-                    );
-
-                    const io = req.app.get('io');
-                    if (io) {
-                      io.to('admin').emit('team_registered', {
-                        team_id: teamId,
-                        team_name: cleanTeamName,
-                        total_members: defaultCount
-                      });
-                    }
-
-                    return res.json({
-                      success: true,
-                      token,
-                      user: {
-                        id: leaderUserId,
-                        name: cleanLeaderName,
-                        role: 'TEAM_LEADER',
-                        team_id: teamId,
-                        team_name: cleanTeamName
-                      },
-                      message: 'Team registered successfully!'
-                    });
-                  });
-                }
-              );
-            }
-          );
-        });
-      });
-    });
-  });
-};
-
-
-// Login Endpoint (Leader Login by Team Name & Leader Name)
-exports.loginUser = (req, res) => {
-  const { team_name, leader_name, identifier } = req.body;
-  const cleanTeam = (team_name || identifier || '').trim();
-  const cleanLeader = (leader_name || '').trim();
-
-  if (!cleanTeam) {
-    return res.status(400).json({ success: false, error: 'Please enter your registered Team Name.' });
-  }
-  if (!cleanLeader) {
-    return res.status(400).json({ success: false, error: 'Please enter Team Leader Name.' });
-  }
-
-  // Search users by Leader of team_name AND leader_name
-  db.get(
-    `SELECT u.*, t.team_name, t.status as team_status
-     FROM users u
-     JOIN teams t ON u.team_id = t.id
-     WHERE LOWER(t.team_name) = LOWER(?) AND LOWER(u.name) = LOWER(?) AND u.role = 'TEAM_LEADER'`,
-    [cleanTeam, cleanLeader],
-    (err, user) => {
-      if (err || !user) {
-        return res.status(401).json({ success: false, error: 'Team Name or Team Leader Name is incorrect.' });
-      }
-
-      const token = jwt.sign(
-        {
-          id: user.id,
-          name: user.name,
-          role: user.role,
-          team_id: user.team_id,
-          team_name: user.team_name
-        },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-
-      res.json({
-        success: true,
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          role: user.role,
-          team_id: user.team_id,
-          team_name: user.team_name
-        }
+    if (currentTotal + defaultCount > maxParticipants) {
+      return res.status(400).json({
+        success: false,
+        code: 'CAPACITY_REACHED',
+        error: 'The Treasure Hunt has reached the maximum participant capacity.'
       });
     }
-  );
+
+    const existingTeam = await Team.findOne({
+      team_name: { $regex: new RegExp(`^${cleanTeamName}$`, 'i') }
+    });
+
+    if (existingTeam) {
+      return res.status(400).json({
+        success: false,
+        code: 'DUPLICATE_TEAM_NAME',
+        error: 'This team name is already taken. Please choose another name.'
+      });
+    }
+
+    const stageOrder = generateShuffledStageOrder();
+
+    const newTeam = await Team.create({
+      team_name: cleanTeamName,
+      member_count: defaultCount,
+      status: 'ACTIVE',
+      stage_order: stageOrder,
+      completed_stages: []
+    });
+
+    const defaultPassHash = bcrypt.hashSync(`leader_${newTeam._id}`, 10);
+    const leaderUser = await User.create({
+      name: cleanLeaderName,
+      password_hash: defaultPassHash,
+      role: 'TEAM_LEADER',
+      team_id: newTeam._id
+    });
+
+    newTeam.leader_user_id = leaderUser._id;
+    await newTeam.save();
+
+    const token = jwt.sign(
+      {
+        id: leaderUser._id,
+        name: cleanLeaderName,
+        role: 'TEAM_LEADER',
+        team_id: newTeam._id,
+        team_name: cleanTeamName
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admin').emit('team_registered', {
+        team_id: newTeam._id,
+        team_name: cleanTeamName,
+        total_members: defaultCount
+      });
+    }
+
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: leaderUser._id,
+        name: cleanLeaderName,
+        role: 'TEAM_LEADER',
+        team_id: newTeam._id,
+        team_name: cleanTeamName
+      },
+      message: 'Team registered successfully!'
+    });
+  } catch (err) {
+    console.error('Register team error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to register team.' });
+  }
 };
 
+// Login Endpoint (Leader Login by Team Name & Leader Name)
+exports.loginUser = async (req, res) => {
+  try {
+    const { team_name, leader_name, identifier } = req.body || {};
+    const cleanTeam = (team_name || identifier || '').trim();
+    const cleanLeader = (leader_name || '').trim();
 
+    if (!cleanTeam) {
+      return res.status(400).json({ success: false, error: 'Please enter your registered Team Name.' });
+    }
+    if (!cleanLeader) {
+      return res.status(400).json({ success: false, error: 'Please enter Team Leader Name.' });
+    }
+
+    const team = await Team.findOne({
+      team_name: { $regex: new RegExp(`^${cleanTeam}$`, 'i') }
+    });
+
+    if (!team) {
+      return res.status(401).json({ success: false, error: 'Team Name or Team Leader Name is incorrect.' });
+    }
+
+    const user = await User.findOne({
+      team_id: team._id,
+      name: { $regex: new RegExp(`^${cleanLeader}$`, 'i') },
+      role: 'TEAM_LEADER'
+    });
+
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Team Name or Team Leader Name is incorrect.' });
+    }
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        name: user.name,
+        role: user.role,
+        team_id: team._id,
+        team_name: team.team_name
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        role: user.role,
+        team_id: team._id,
+        team_name: team.team_name
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Login failed.' });
+  }
+};
 
 // Quick Team Member Join / Direct Login
-exports.loginTeamMember = (req, res) => {
-  const { team_name, member_name } = req.body;
+exports.loginTeamMember = async (req, res) => {
+  try {
+    const { team_name, member_name } = req.body || {};
 
-  if (!team_name || !team_name.trim()) {
-    return res.status(400).json({ success: false, error: 'Team name is required.' });
-  }
+    if (!team_name || !team_name.trim()) {
+      return res.status(400).json({ success: false, error: 'Team name is required.' });
+    }
 
-  const cleanTeam = team_name.trim();
-  const cleanMember = member_name ? member_name.trim() : 'Team Member';
+    const cleanTeam = team_name.trim();
+    const cleanMember = member_name ? member_name.trim() : 'Team Member';
 
-  db.get("SELECT * FROM teams WHERE LOWER(team_name) = LOWER(?)", [cleanTeam], (err, team) => {
-    if (err || !team) {
+    const team = await Team.findOne({
+      team_name: { $regex: new RegExp(`^${cleanTeam}$`, 'i') }
+    });
+
+    if (!team) {
       return res.status(404).json({ success: false, error: 'Team not found. Please check team name.' });
     }
 
-    // Find or create member user
-    db.get(
-      "SELECT * FROM users WHERE team_id = ? AND role = 'TEAM_MEMBER' AND LOWER(name) = LOWER(?)",
-      [team.id, cleanMember],
-      (err, memberUser) => {
-        let userObj = memberUser;
+    let memberUser = await User.findOne({
+      team_id: team._id,
+      role: 'TEAM_MEMBER',
+      name: { $regex: new RegExp(`^${cleanMember}$`, 'i') }
+    });
 
-        const generateToken = (usr) => {
-          const token = jwt.sign(
-            {
-              id: usr.id,
-              name: usr.name,
-              role: 'TEAM_MEMBER',
-              team_id: team.id,
-              team_name: team.team_name
-            },
-            JWT_SECRET,
-            { expiresIn: '24h' }
-          );
+    if (!memberUser) {
+      const passHash = bcrypt.hashSync('member123', 10);
+      memberUser = await User.create({
+        name: cleanMember,
+        password_hash: passHash,
+        role: 'TEAM_MEMBER',
+        team_id: team._id
+      });
+    }
 
-          res.json({
-            success: true,
-            token,
-            user: {
-              id: usr.id,
-              name: usr.name,
-              role: 'TEAM_MEMBER',
-              team_id: team.id,
-              team_name: team.team_name
-            }
-          });
-        };
-
-        if (userObj) {
-          generateToken(userObj);
-        } else {
-          // Create member user
-          const passHash = bcrypt.hashSync('member123', 10);
-          db.run(
-            "INSERT INTO users (name, password_hash, role, team_id) VALUES (?, ?, 'TEAM_MEMBER', ?)",
-            [cleanMember, passHash, team.id],
-            function (err) {
-              if (err) {
-                return res.status(500).json({ success: false, error: 'Failed to register team member session.' });
-              }
-              const newId = this.lastID;
-              db.run("INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, 'TEAM_MEMBER')", [team.id, newId]);
-              generateToken({ id: newId, name: cleanMember });
-            }
-          );
-        }
-      }
+    const token = jwt.sign(
+      {
+        id: memberUser._id,
+        name: memberUser.name,
+        role: 'TEAM_MEMBER',
+        team_id: team._id,
+        team_name: team.team_name
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
     );
-  });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: memberUser._id,
+        name: memberUser.name,
+        role: 'TEAM_MEMBER',
+        team_id: team._id,
+        team_name: team.team_name
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to login team member.' });
+  }
 };
 
 // Get Live Team Progress & Hint
-exports.getTeamProgress = (req, res) => {
-  const user = req.user;
-  if (!user || !user.team_id) {
-    return res.status(400).json({ success: false, error: 'Missing team authorization.' });
-  }
+exports.getTeamProgress = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.team_id) {
+      return res.status(400).json({ success: false, error: 'Missing team authorization.' });
+    }
 
-  const teamId = user.team_id;
+    const teamId = user.team_id;
+    const huntState = (await Hunt.findOne()) || { status: 'LIVE' };
+    const team = await Team.findById(teamId);
 
-  db.serialize(() => {
-    // 1. Get global hunt state
-    db.get("SELECT * FROM hunt WHERE id = 1", [], (err, huntRow) => {
-      const huntState = huntRow || { status: 'LIVE' };
+    if (!team) {
+      return res.status(404).json({ success: false, error: 'Team record not found.' });
+    }
 
-      // 2. Get Team details
-      db.get("SELECT * FROM teams WHERE id = ?", [teamId], (err, team) => {
-        if (err || !team) {
-          return res.status(404).json({ success: false, error: 'Team record not found.' });
-        }
+    const stagesList = await Stage.find().sort({ stage_number: 1 });
+    const stageMap = {};
+    stagesList.forEach(s => { stageMap[s.stage_number] = s; });
 
-        // 3. Get Team Stage Order
-        db.all(
-          `SELECT tso.position, s.id as stage_id, s.stage_number, s.title, s.mission_description, s.clue_text
-           FROM team_stage_order tso
-           JOIN stages s ON tso.stage_id = s.id
-           WHERE tso.team_id = ?
-           ORDER BY tso.position ASC`,
-          [teamId],
-          (err, stageOrderRows) => {
-            if (err || !stageOrderRows || stageOrderRows.length === 0) {
-              return res.status(500).json({ success: false, error: 'Team stage order not initialized.' });
-            }
+    const completedSet = new Set((team.completed_stages || []).map(c => c.stage_number));
+    const completedCount = completedSet.size;
 
-            // 4. Get Stage Completions for Team
-            db.all(
-              "SELECT * FROM stage_completions WHERE team_id = ? ORDER BY position ASC",
-              [teamId],
-              (err, completions) => {
-                const completedSet = new Set((completions || []).map(c => c.stage_id));
-                const completedCount = completedSet.size;
+    const currentPosition = Math.min(7, completedCount + 1);
+    const isFullyCompleted = completedCount >= 7;
 
-                // Current position: 1-indexed (1..7)
-                const currentPosition = Math.min(7, completedCount + 1);
-                const isFullyCompleted = completedCount >= 7;
-
-                // Build sequence with status
-                const sequence = stageOrderRows.map((stg) => {
-                  let status = 'LOCKED';
-                  if (completedSet.has(stg.stage_id)) {
-                    status = 'COMPLETED';
-                  } else if (stg.position === currentPosition && !isFullyCompleted) {
-                    status = 'CURRENT';
-                  }
-                  return {
-                    position: stg.position,
-                    stage_number: stg.stage_number,
-                    title: stg.title,
-                    status
-                  };
-                });
-
-                // Get current unlocked clue (for current required stage)
-                const currentStageObj = stageOrderRows.find(s => s.position === currentPosition) || stageOrderRows[6];
-
-                // Get team members list
-                db.all(
-                  "SELECT u.id, u.name, u.role FROM users u WHERE u.team_id = ?",
-                  [teamId],
-                  (err, memberRows) => {
-
-                    // If hunt completed, get winner team details
-                    const getWinnerDetails = (cb) => {
-                      if (huntState.winner_team_id) {
-                        db.get("SELECT team_name, completed_at FROM teams WHERE id = ?", [huntState.winner_team_id], (err, w) => {
-                          cb(w || null);
-                        });
-                      } else {
-                        cb(null);
-                      }
-                    };
-
-                    getWinnerDetails((winnerInfo) => {
-                      res.json({
-                        success: true,
-                        role: user.role,
-                        team: {
-                          id: team.id,
-                          team_name: team.team_name,
-                          status: isFullyCompleted ? 'COMPLETED' : team.status,
-                          started_at: team.started_at,
-                          completed_at: team.completed_at
-                        },
-                        current_position: currentPosition,
-                        completed_stages_count: completedCount,
-                        total_stages: 7,
-                        is_completed: isFullyCompleted,
-                        stage_sequence: sequence,
-                        current_hint: {
-                          stage_number: currentStageObj.stage_number,
-                          title: currentStageObj.title,
-                          mission_description: currentStageObj.mission_description,
-                          clue_text: currentStageObj.clue_text
-                        },
-                        members: memberRows || [],
-                        hunt: {
-                          status: huntState.status,
-                          winner_team_id: huntState.winner_team_id,
-                          winner_name: winnerInfo ? winnerInfo.team_name : null,
-                          winner_completed_at: huntState.winner_completed_at
-                        }
-                      });
-                    });
-                  }
-                );
-              }
-            );
-          }
-        );
-      });
+    const sequence = (team.stage_order || []).map((stg) => {
+      const stageData = stageMap[stg.stage_number] || {};
+      let status = 'LOCKED';
+      if (completedSet.has(stg.stage_number)) {
+        status = 'COMPLETED';
+      } else if (stg.position === currentPosition && !isFullyCompleted) {
+        status = 'CURRENT';
+      }
+      return {
+        position: stg.position,
+        stage_number: stg.stage_number,
+        title: stageData.title || `Stage ${stg.stage_number}`,
+        status
+      };
     });
-  });
+
+    const currentStageObj = (team.stage_order || []).find(s => s.position === currentPosition) || (team.stage_order || [])[6] || { stage_number: 7 };
+    const currentStageData = stageMap[currentStageObj.stage_number] || {};
+
+    const memberRows = await User.find({ team_id: teamId }).select('_id name role');
+
+    let winnerInfo = null;
+    if (huntState.winner_team_id) {
+      const winnerTeam = await Team.findById(huntState.winner_team_id);
+      if (winnerTeam) {
+        winnerInfo = { team_name: winnerTeam.team_name, completed_at: winnerTeam.completed_at };
+      }
+    }
+
+    res.json({
+      success: true,
+      role: user.role,
+      team: {
+        id: team._id,
+        team_name: team.team_name,
+        status: isFullyCompleted ? 'COMPLETED' : team.status,
+        started_at: team.started_at,
+        completed_at: team.completed_at
+      },
+      current_position: currentPosition,
+      completed_stages_count: completedCount,
+      total_stages: 7,
+      is_completed: isFullyCompleted,
+      stage_sequence: sequence,
+      current_hint: {
+        stage_number: currentStageData.stage_number || currentStageObj.stage_number,
+        title: currentStageData.title || 'Checkpoint',
+        mission_description: currentStageData.mission_description || '',
+        clue_text: currentStageData.clue_text || ''
+      },
+      members: memberRows || [],
+      hunt: {
+        status: huntState.status,
+        winner_team_id: huntState.winner_team_id,
+        winner_name: winnerInfo ? winnerInfo.team_name : huntState.winner_team_name || null,
+        winner_completed_at: huntState.winner_completed_at
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching team progress:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch team progress.' });
+  }
 };
 
 // QR Token Scan Logic
-exports.scanToken = (req, res) => {
-  const user = req.user;
-  const { qr_token } = req.body;
+exports.scanToken = async (req, res) => {
+  try {
+    const user = req.user;
+    const { qr_token } = req.body || {};
 
-  // STRICT ROLE ENFORCEMENT: Team Members CANNOT scan
-  if (!user || user.role !== 'TEAM_LEADER') {
-    return res.status(403).json({
-      success: false,
-      code: 'FORBIDDEN_MEMBER_SCAN',
-      error: '403 FORBIDDEN: QR scanning is restricted to Team Leaders only.'
+    if (!user || user.role !== 'TEAM_LEADER') {
+      return res.status(403).json({
+        success: false,
+        code: 'FORBIDDEN_MEMBER_SCAN',
+        error: '403 FORBIDDEN: QR scanning is restricted to Team Leaders only.'
+      });
+    }
+
+    if (!qr_token || !qr_token.trim()) {
+      return res.status(400).json({ success: false, error: 'QR token is required.' });
+    }
+
+    const cleanToken = qr_token.trim();
+    const teamId = user.team_id;
+
+    const huntState = (await Hunt.findOne()) || { status: 'LIVE' };
+    if (huntState.status !== 'LIVE') {
+      return res.status(400).json({
+        success: false,
+        code: 'HUNT_CLOSED',
+        title: '🏆 TREASURE HUNT COMPLETE',
+        message: 'The Treasure Hunt has concluded! No further QR scans are accepted.'
+      });
+    }
+
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({ success: false, error: 'Team not found.' });
+    }
+
+    const completedCount = (team.completed_stages || []).length;
+    if (completedCount >= 7) {
+      return res.json({
+        success: true,
+        code: 'TEAM_ALREADY_COMPLETED',
+        title: '🏆 TREASURE UNLOCKED!',
+        message: 'Your team has already completed all 7 stages!',
+        is_final: true
+      });
+    }
+
+    const currentPosition = completedCount + 1;
+    const requiredStageObj = (team.stage_order || []).find(s => s.position === currentPosition);
+    if (!requiredStageObj) {
+      return res.status(500).json({ success: false, error: 'Failed to retrieve team objective.' });
+    }
+
+    const allStages = await Stage.find();
+    if (!allStages || allStages.length === 0) {
+      await ScanAttempt.create({
+        team_id: team._id,
+        user_id: user.id,
+        team_name: team.team_name,
+        user_name: user.name,
+        role: user.role,
+        scanned_token: cleanToken,
+        is_success: false,
+        message: 'UNKNOWN_MARK'
+      });
+
+      return res.json({
+        success: false,
+        code: 'UNKNOWN_MARK',
+        title: 'UNKNOWN MARK',
+        message: 'This symbol does not belong to this college treasure hunt.'
+      });
+    }
+
+    // Match QR token strategy
+    const stageMatch = allStages.find(s => {
+      const secToken = (s.qr_token || '').trim();
+      const stgNum = s.stage_number.toString();
+
+      if (secToken && cleanToken === secToken) return true;
+      if (secToken && cleanToken.toLowerCase() === secToken.toLowerCase()) return true;
+      if (secToken && (cleanToken.includes(secToken) || secToken.includes(cleanToken))) return true;
+      if (cleanToken.toLowerCase().includes(`stage${stgNum}`) || cleanToken.toLowerCase().includes(`stage-0${stgNum}`) || cleanToken.toLowerCase().includes(`stage_0${stgNum}`)) return true;
+
+      return false;
     });
-  }
 
-  if (!qr_token || !qr_token.trim()) {
-    return res.status(400).json({ success: false, error: 'QR token is required.' });
-  }
+    if (!stageMatch) {
+      await ScanAttempt.create({
+        team_id: team._id,
+        user_id: user.id,
+        team_name: team.team_name,
+        user_name: user.name,
+        role: user.role,
+        scanned_token: cleanToken,
+        is_success: false,
+        message: 'UNKNOWN_MARK'
+      });
 
-  const cleanToken = qr_token.trim();
-  const teamId = user.team_id;
+      return res.json({
+        success: false,
+        code: 'UNKNOWN_MARK',
+        title: 'UNKNOWN MARK',
+        message: 'This symbol does not belong to this college treasure hunt.'
+      });
+    }
 
-  db.serialize(() => {
-    // 1. Verify global hunt state
-    db.get("SELECT * FROM hunt WHERE id = 1", [], (err, huntState) => {
-      if (huntState && huntState.status !== 'LIVE') {
-        return res.status(400).json({
-          success: false,
-          code: 'HUNT_CLOSED',
-          title: '🏆 TREASURE HUNT COMPLETE',
-          message: 'The Treasure Hunt has concluded! No further QR scans are accepted.'
+    const requiredStage = allStages.find(s => s.stage_number === requiredStageObj.stage_number);
+
+    // CHECK WRONG MARK
+    if (stageMatch.stage_number !== requiredStageObj.stage_number) {
+      await ScanAttempt.create({
+        team_id: team._id,
+        user_id: user.id,
+        team_name: team.team_name,
+        user_name: user.name,
+        role: user.role,
+        scanned_token: cleanToken,
+        is_success: false,
+        stage_number: stageMatch.stage_number,
+        message: 'WRONG_MARK'
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`team:${team._id}`).emit('wrong_qr_scan', {
+          team_name: team.team_name,
+          scanned_stage: stageMatch.stage_number,
+          required_stage: requiredStageObj.stage_number
         });
       }
 
-      // 2. Fetch Team and Stage Order
-      db.get("SELECT * FROM teams WHERE id = ?", [teamId], (err, team) => {
-        if (err || !team) {
-          return res.status(404).json({ success: false, error: 'Team not found.' });
-        }
-
-        db.all(
-          "SELECT * FROM stage_completions WHERE team_id = ?",
-          [teamId],
-          (err, completions) => {
-            const completedCount = (completions || []).length;
-
-            if (completedCount >= 7) {
-              return res.json({
-                success: true,
-                code: 'TEAM_ALREADY_COMPLETED',
-                title: '🏆 TREASURE UNLOCKED!',
-                message: 'Your team has already completed all 7 stages!',
-                is_final: true
-              });
-            }
-
-            const currentPosition = completedCount + 1; // 1-indexed required position
-
-            // Find current required stage for team position
-            db.get(
-              `SELECT tso.position, s.id as stage_id, s.stage_number, s.title, s.clue_text
-               FROM team_stage_order tso
-               JOIN stages s ON tso.stage_id = s.id
-               WHERE tso.team_id = ? AND tso.position = ?`,
-              [teamId, currentPosition],
-              (err, requiredStage) => {
-                if (err || !requiredStage) {
-                  return res.status(500).json({ success: false, error: 'Failed to retrieve team objective.' });
-                }
-
-                // Look up scanned QR code with multi-strategy token matching
-                db.all(
-                  `SELECT q.id as qr_id, q.stage_id, q.secure_token, s.stage_number, s.title, s.clue_text
-                   FROM qr_codes q
-                   JOIN stages s ON q.stage_id = s.id`,
-                  [],
-                  (err, allQRs) => {
-                    if (err || !allQRs || allQRs.length === 0) {
-                      db.run(
-                        "INSERT INTO scan_attempts (team_id, user_id, scanned_token, is_success, message) VALUES (?, ?, ?, 0, 'UNKNOWN_MARK')",
-                        [teamId, user.id, cleanToken]
-                      );
-                      return res.json({
-                        success: false,
-                        code: 'UNKNOWN_MARK',
-                        title: 'UNKNOWN MARK',
-                        message: 'This symbol does not belong to this college treasure hunt.'
-                      });
-                    }
-
-                    // Find matching QR entry
-                    const qrMatch = allQRs.find(q => {
-                      const secToken = (q.secure_token || '').trim();
-                      const stgNum = q.stage_number.toString();
-
-                      if (secToken && cleanToken === secToken) return true;
-                      if (secToken && cleanToken.toLowerCase() === secToken.toLowerCase()) return true;
-                      if (secToken && (cleanToken.includes(secToken) || secToken.includes(cleanToken))) return true;
-
-                      // Stage tag matching e.g. TH_STAGE1_MARK or stage-01 or stage1
-                      if (cleanToken.toLowerCase().includes(`stage${stgNum}`) || cleanToken.toLowerCase().includes(`stage-0${stgNum}`) || cleanToken.toLowerCase().includes(`stage_0${stgNum}`)) return true;
-
-                      return false;
-                    });
-
-                    if (!qrMatch) {
-                      db.run(
-                        "INSERT INTO scan_attempts (team_id, user_id, scanned_token, is_success, message) VALUES (?, ?, ?, 0, 'UNKNOWN_MARK')",
-                        [teamId, user.id, cleanToken]
-                      );
-                      return res.json({
-                        success: false,
-                        code: 'UNKNOWN_MARK',
-                        title: 'UNKNOWN MARK',
-                        message: 'This symbol does not belong to this college treasure hunt.'
-                      });
-                    }
-
-
-                    // CHECK WRONG MARK: If scanned QR does NOT match current required stage
-                    if (qrMatch.stage_id !== requiredStage.stage_id) {
-                      db.run(
-                        "INSERT INTO scan_attempts (team_id, user_id, scanned_token, is_success, stage_number, message) VALUES (?, ?, ?, 0, ?, 'WRONG_MARK')",
-                        [teamId, user.id, cleanToken, qrMatch.stage_number]
-                      );
-
-                      const io = req.app.get('io');
-                      if (io) {
-                        io.to(`team:${teamId}`).emit('wrong_qr_scan', {
-                          team_name: team.team_name,
-                          scanned_stage: qrMatch.stage_number,
-                          required_stage: requiredStage.stage_number
-                        });
-                      }
-
-                      return res.json({
-                        success: false,
-                        code: 'WRONG_MARK',
-                        title: '⚠ WRONG MARK',
-                        message: `Your team's next destination lies elsewhere. You scanned ${qrMatch.title || 'a different location'}, but your next objective is ${requiredStage.title || 'your current target'}.`,
-                        scanned_stage: qrMatch.stage_number,
-                        required_stage: requiredStage.stage_number
-                      });
-                    }
-
-                    // CORRECT QR SCAN! Insert Stage Completion
-                    const targetQRId = qrMatch.qr_id || qrMatch.id || 1;
-                    db.run(
-                      "INSERT OR REPLACE INTO stage_completions (team_id, stage_id, position, qr_id) VALUES (?, ?, ?, ?)",
-                      [teamId, qrMatch.stage_id, currentPosition, targetQRId],
-                      function (err) {
-                        if (err) {
-                          console.error("Stage completion insert error:", err);
-                          return res.status(500).json({ success: false, error: err.message || 'Failed to record stage completion.' });
-                        }
-
-
-
-
-
-                        const isFinalStage = currentPosition >= 7;
-
-                        if (isFinalStage) {
-                          // Update Team completion timestamp
-                          db.run("UPDATE teams SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP WHERE id = ?", [teamId]);
-
-                          // Atomic Winner declaration
-                          db.run(
-                            "UPDATE hunt SET winner_team_id = ?, winner_completed_at = CURRENT_TIMESTAMP, status = 'CLOSED' WHERE winner_team_id IS NULL AND id = 1",
-                            [teamId],
-                            function (err) {
-                              const isWinner = this.changes > 0;
-
-                              const io = req.app.get('io');
-                              if (io) {
-                                io.to(`team:${teamId}`).emit('stage_completed', {
-                                  team_name: team.team_name,
-                                  position: 7,
-                                  is_final: true,
-                                  is_winner: isWinner
-                                });
-
-                                io.emit('hunt_winner_declared', {
-                                  winner_team_id: teamId,
-                                  winner_team_name: team.team_name,
-                                  completed_at: new Date().toISOString()
-                                });
-
-                                io.emit('hunt_closed', {
-                                  winner_team_name: team.team_name
-                                });
-                              }
-
-                              return res.json({
-                                success: true,
-                                code: 'FINAL_TREASURE_UNLOCKED',
-                                title: isWinner ? '🏆 YOU FOUND THE TREASURE!' : '🏆 TREASURE HUNT COMPLETE',
-                                message: isWinner
-                                  ? '🎉 CONGRATULATIONS! Your team was the FIRST to discover the treasure!'
-                                  : 'Your team completed all 7 stages! Excellent work!',
-                                is_winner: isWinner,
-                                is_final: true,
-                                stage_number: qrMatch.stage_number,
-                                stage_title: qrMatch.title
-                              });
-                            }
-                          );
-                        } else {
-                          // Intermediate stage completed
-                          const nextPosition = currentPosition + 1;
-                          db.get(
-                            `SELECT s.stage_number, s.title, s.clue_text
-                             FROM team_stage_order tso
-                             JOIN stages s ON tso.stage_id = s.id
-                             WHERE tso.team_id = ? AND tso.position = ?`,
-                            [teamId, nextPosition],
-                            (err, nextStage) => {
-
-                              const io = req.app.get('io');
-                              if (io) {
-                                io.to(`team:${teamId}`).emit('stage_completed', {
-                                  team_name: team.team_name,
-                                  completed_position: currentPosition,
-                                  next_position: nextPosition,
-                                  next_hint: nextStage || null
-                                });
-
-                                io.to('admin').emit('team_progress_updated', {
-                                  team_id: teamId,
-                                  team_name: team.team_name,
-                                  completed_stages: currentPosition
-                                });
-                              }
-
-                              return res.json({
-                                success: true,
-                                code: 'STAGE_COMPLETED',
-                                title: `✓ STAGE ${currentPosition} COMPLETED`,
-                                message: `Stage ${qrMatch.stage_number} completed! Your next clue has been unlocked.`,
-                                position_completed: currentPosition,
-                                stage_number: qrMatch.stage_number,
-                                stage_title: qrMatch.title,
-                                next_stage: nextStage || null
-                              });
-                            }
-                          );
-                        }
-                      }
-                    );
-                  }
-                );
-              }
-            );
-          }
-        );
+      return res.json({
+        success: false,
+        code: 'WRONG_MARK',
+        title: '⚠ WRONG MARK',
+        message: `Your team's next destination lies elsewhere. You scanned ${stageMatch.title || 'a different location'}, but your next objective is ${requiredStage ? requiredStage.title : 'your current target'}.`,
+        scanned_stage: stageMatch.stage_number,
+        required_stage: requiredStageObj.stage_number
       });
+    }
+
+    // CORRECT QR SCAN! Record stage completion
+    team.completed_stages.push({
+      position: currentPosition,
+      stage_number: stageMatch.stage_number,
+      qr_token: cleanToken,
+      completed_at: new Date()
     });
-  });
+
+    const isFinalStage = currentPosition >= 7;
+
+    if (isFinalStage) {
+      team.status = 'COMPLETED';
+      team.completed_at = new Date();
+      await team.save();
+
+      // Atomic winner update
+      const winnerHunt = await Hunt.findOneAndUpdate(
+        { winner_team_id: null },
+        {
+          winner_team_id: team._id,
+          winner_team_name: team.team_name,
+          winner_completed_at: new Date(),
+          status: 'CLOSED'
+        },
+        { new: true }
+      );
+
+      const isWinner = winnerHunt && String(winnerHunt.winner_team_id) === String(team._id);
+
+      await ScanAttempt.create({
+        team_id: team._id,
+        user_id: user.id,
+        team_name: team.team_name,
+        user_name: user.name,
+        role: user.role,
+        scanned_token: cleanToken,
+        is_success: true,
+        stage_number: stageMatch.stage_number,
+        message: isWinner ? 'WINNER_DECLARED' : 'FINAL_STAGE_COMPLETED'
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`team:${team._id}`).emit('stage_completed', {
+          team_name: team.team_name,
+          position: 7,
+          is_final: true,
+          is_winner: isWinner
+        });
+
+        io.emit('hunt_winner_declared', {
+          winner_team_id: team._id,
+          winner_team_name: team.team_name,
+          completed_at: new Date().toISOString()
+        });
+
+        io.emit('hunt_closed', {
+          winner_team_name: team.team_name
+        });
+      }
+
+      return res.json({
+        success: true,
+        code: 'FINAL_TREASURE_UNLOCKED',
+        title: isWinner ? '🏆 YOU FOUND THE TREASURE!' : '🏆 TREASURE HUNT COMPLETE',
+        message: isWinner
+          ? '🎉 CONGRATULATIONS! Your team was the FIRST to discover the treasure!'
+          : 'Your team completed all 7 stages! Excellent work!',
+        is_winner: isWinner,
+        is_final: true,
+        stage_number: stageMatch.stage_number,
+        stage_title: stageMatch.title
+      });
+    } else {
+      await team.save();
+
+      const nextPosition = currentPosition + 1;
+      const nextStageObj = (team.stage_order || []).find(s => s.position === nextPosition);
+      const nextStageData = nextStageObj ? allStages.find(s => s.stage_number === nextStageObj.stage_number) : null;
+
+      await ScanAttempt.create({
+        team_id: team._id,
+        user_id: user.id,
+        team_name: team.team_name,
+        user_name: user.name,
+        role: user.role,
+        scanned_token: cleanToken,
+        is_success: true,
+        stage_number: stageMatch.stage_number,
+        message: `STAGE_${currentPosition}_COMPLETED`
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`team:${team._id}`).emit('stage_completed', {
+          team_name: team.team_name,
+          completed_position: currentPosition,
+          next_position: nextPosition,
+          next_hint: nextStageData || null
+        });
+
+        io.to('admin').emit('team_progress_updated', {
+          team_id: team._id,
+          team_name: team.team_name,
+          completed_stages: currentPosition
+        });
+      }
+
+      return res.json({
+        success: true,
+        code: 'STAGE_COMPLETED',
+        title: `✓ STAGE ${currentPosition} COMPLETED`,
+        message: `Stage ${stageMatch.stage_number} completed! Your next clue has been unlocked.`,
+        position_completed: currentPosition,
+        stage_number: stageMatch.stage_number,
+        stage_title: stageMatch.title,
+        next_stage: nextStageData || null
+      });
+    }
+  } catch (err) {
+    console.error('Scan token error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Scan verification error.' });
+  }
 };
 
 // Global Leaderboard
-exports.getLeaderboard = (req, res) => {
-  db.all(
-    `SELECT t.id, t.team_name, t.started_at, t.completed_at,
-            (SELECT COUNT(*) FROM stage_completions sc WHERE sc.team_id = t.id) as completed_stages,
-            (STRFTIME('%s', t.completed_at) - STRFTIME('%s', t.started_at)) as duration_seconds
-     FROM teams t
-     ORDER BY completed_stages DESC, t.completed_at ASC, t.created_at ASC`,
-    [],
-    (err, rows) => {
-      if (err) {
-        return res.status(500).json({ success: false, error: 'Database query error.' });
+exports.getLeaderboard = async (req, res) => {
+  try {
+    const teams = await Team.find();
+
+    const leaderboard = (teams || []).map((t) => {
+      const completedCount = (t.completed_stages || []).length;
+      let durationSeconds = 0;
+      if (t.completed_at && t.started_at) {
+        durationSeconds = Math.max(0, Math.floor((new Date(t.completed_at) - new Date(t.started_at)) / 1000));
       }
-
-      const leaderboard = (rows || []).map((t, idx) => ({
-        rank: idx + 1,
-        id: t.id,
+      return {
+        id: t._id,
         team_name: t.team_name,
-        completed_stages: t.completed_stages || 0,
-        is_completed: (t.completed_stages || 0) >= 7,
-        duration_seconds: t.duration_seconds || 0,
-        duration_formatted: t.duration_seconds ? formatDuration(t.duration_seconds) : null
-      }));
+        completed_stages: completedCount,
+        is_completed: completedCount >= 7,
+        started_at: t.started_at,
+        completed_at: t.completed_at,
+        duration_seconds: durationSeconds,
+        duration_formatted: durationSeconds ? formatDuration(durationSeconds) : null
+      };
+    });
 
-      res.json({
-        success: true,
-        count: leaderboard.length,
-        leaderboard
-      });
-    }
-  );
+    leaderboard.sort((a, b) => {
+      if (b.completed_stages !== a.completed_stages) {
+        return b.completed_stages - a.completed_stages;
+      }
+      if (a.completed_at && b.completed_at) {
+        return new Date(a.completed_at) - new Date(b.completed_at);
+      }
+      return 0;
+    });
+
+    const ranked = leaderboard.map((t, idx) => ({ ...t, rank: idx + 1 }));
+
+    res.json({
+      success: true,
+      count: ranked.length,
+      leaderboard: ranked
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch leaderboard.' });
+  }
 };
 
 function formatDuration(totalSeconds) {
@@ -725,31 +694,33 @@ function formatDuration(totalSeconds) {
 }
 
 // Participant Feedback
-exports.submitFeedback = (req, res) => {
-  const user = req.user;
-  const { rating, emoji, comment, participant_name, team_name } = req.body;
+exports.submitFeedback = async (req, res) => {
+  try {
+    const user = req.user;
+    const { rating, emoji, comment, participant_name, team_name } = req.body || {};
 
-  if (!rating || rating < 1 || rating > 5) {
-    return res.status(400).json({ success: false, error: 'Please provide a star rating between 1 and 5.' });
-  }
-
-  const teamId = user ? user.team_id : null;
-  const userId = user ? user.id : null;
-  const pName = participant_name || (user ? user.name : 'Anonymous Hunter');
-  const tName = team_name || (user ? user.team_name : '');
-
-  db.run(
-    "INSERT INTO feedback (team_id, user_id, rating, emoji, comment, participant_name, team_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [teamId, userId, rating, emoji || '⭐', comment ? comment.trim() : '', pName, tName],
-    function (err) {
-      if (err) {
-        return res.status(500).json({ success: false, error: 'Failed to record feedback.' });
-      }
-      res.json({
-        success: true,
-        message: 'Your adventure feedback has been recorded. Thank you!'
-      });
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, error: 'Please provide a star rating between 1 and 5.' });
     }
-  );
-};
 
+    const pName = participant_name || (user ? user.name : 'Anonymous Hunter');
+    const tName = team_name || (user ? user.team_name : '');
+
+    await Feedback.create({
+      team_id: user ? user.team_id : null,
+      user_id: user ? user.id : null,
+      rating,
+      emoji: emoji || '⭐',
+      comment: comment ? comment.trim() : '',
+      participant_name: pName,
+      team_name: tName
+    });
+
+    res.json({
+      success: true,
+      message: 'Your adventure feedback has been recorded. Thank you!'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to record feedback.' });
+  }
+};
