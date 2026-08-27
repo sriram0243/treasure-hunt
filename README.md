@@ -53,10 +53,8 @@ Open your browser at `http://localhost:3000`.
 
 ---
 
-## 🔑 Default Admin Credentials
+## 🔑 Admin Access
 - **URL**: Click the Shield Icon (`🛡️`) in the top navigation bar or navigate to the Admin Gateway.
-- **Username**: `admin`
-- **Password**: `treasure2026`
 
 ---
 

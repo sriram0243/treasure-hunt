@@ -225,10 +225,6 @@ export default function AdminDashboard({ onOpenQRManagement }) {
               <span>{loading ? 'AUTHENTICATING...' : 'ACCESS CONTROL CENTER'}</span>
             </button>
           </form>
-
-          <p className="text-[10px] text-emerald-500 text-center">
-            Default credentials: <code className="text-amber-300 font-mono">admin</code> / <code className="text-amber-300 font-mono">treasure2026</code>
-          </p>
         </div>
       </div>
     );
