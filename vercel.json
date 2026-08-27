@@ -1,5 +1,15 @@
 {
   "version": 2,
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite"
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "express"
+    }
+  },
   "builds": [
     {
       "src": "api/index.js",
@@ -23,8 +33,8 @@
       "dest": "api/index.js"
     },
     {
-      "src": "/socket.io/(.*)",
-      "dest": "api/index.js"
+      "source": "/socket.io/(.*)",
+      "destination": "api/index.js"
     },
     {
       "handle": "filesystem"
