@@ -9,5 +9,15 @@
     "generate-qr": "cd backend && npm run generate-qr",
     "build": "cd frontend && npm run build",
     "vercel-build": "cd backend && npm install && cd ../frontend && npm install && npm run build"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.8.3",
+    "sqlite3": "^5.1.7"
   }
 }

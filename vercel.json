@@ -1,37 +1,23 @@
 {
   "version": 2,
-  "builds": [
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
     {
-      "src": "backend/server.js",
-      "use": "@vercel/node"
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
     },
     {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "backend/server.js"
+      "source": "/qr-codes/(.*)",
+      "destination": "/api/index.js"
     },
     {
-      "src": "/qr-codes/(.*)",
-      "dest": "backend/server.js"
+      "source": "/socket.io/(.*)",
+      "destination": "/api/index.js"
     },
     {
-      "src": "/socket.io/(.*)",
-      "dest": "backend/server.js"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "frontend/$1"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
