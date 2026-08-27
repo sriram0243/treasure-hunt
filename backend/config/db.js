@@ -4,7 +4,14 @@ const bcrypt = require('bcryptjs');
 
 const isVercel = Boolean(process.env.VERCEL);
 const dbPath = isVercel ? path.join('/tmp', 'treasure_hunt.db') : path.join(__dirname, '..', 'treasure_hunt.db');
-const db = new sqlite3.Database(dbPath);
+
+let db;
+try {
+  db = new sqlite3.Database(dbPath);
+} catch (err) {
+  console.error('Failed to open SQLite at ' + dbPath + ', falling back to :memory:', err);
+  db = new sqlite3.Database(':memory:');
+}
 
 const DEFAULT_TOKENS = [
   'TH_STAGE1_MARK_9F8A3C12E45B67890123456789ABCDEF0123456789ABCDEF0123456789ABCDEF',
