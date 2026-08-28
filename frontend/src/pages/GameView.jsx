@@ -472,8 +472,8 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
             CURRENT TEAM OBJECTIVE
           </span>
 
-          <h2 className="text-2xl md:text-4xl font-extrabold font-heading text-amber-200 tracking-wider">
-            {currentHint.title || 'THE MARK'}
+          <h2 className="text-2xl md:text-4xl font-extrabold font-heading text-amber-200 tracking-wider uppercase">
+            STAGE {currentPos.toString().padStart(2, '0')} OBJECTIVE
           </h2>
 
           <p className="text-sm md:text-base text-emerald-200/90 leading-relaxed max-w-xl mx-auto italic">
@@ -600,7 +600,13 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
                   <span className="text-emerald-700 flex items-center gap-1"><Lock className="w-3 h-3" /> Locked</span>
                 )}
               </div>
-              <p className="text-xs font-semibold truncate">{item.title}</p>
+              <p className="text-xs font-semibold truncate">
+                {item.status === 'COMPLETED'
+                  ? `Checkpoint ${item.position.toString().padStart(2, '0')} Cleared`
+                  : item.status === 'CURRENT'
+                  ? `Stage ${item.position.toString().padStart(2, '0')} Target`
+                  : `Stage ${item.position.toString().padStart(2, '0')} Checkpoint`}
+              </p>
             </div>
           ))}
         </div>
