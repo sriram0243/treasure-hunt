@@ -10,6 +10,7 @@ const AppSettings = require('../models/AppSettings');
 const ScanAttempt = require('../models/ScanAttempt');
 const Feedback = require('../models/Feedback');
 const Question = require('../models/Question');
+const db = require('../config/db');
 
 // Helper: Shuffle array [1,2,3,4,5,6] and append 7
 function generateShuffledStageOrder() {
@@ -667,8 +668,6 @@ exports.scanToken = async (req, res) => {
   }
 };
 
-const db = require('../config/db');
-
 // GET Stage 7 Quiz Question (1 randomized question assigned per team from pool)
 exports.getStage7Quiz = async (req, res) => {
   try {
@@ -864,58 +863,6 @@ exports.resetTeamProgress = async (req, res) => {
   } catch (err) {
     console.error('Reset team progress error:', err);
     res.status(500).json({ success: false, error: err.message || 'Failed to reset team progress.' });
-  }
-};
-
-const db = require('../config/db');
-
-// GET Stage 7 Quiz Question (1 randomized question assigned per team from pool)
-exports.getStage7Quiz = async (req, res) => {
-  try {
-    const user = req.user;
-    if (!user || !user.team_id) {
-      return res.status(400).json({ success: false, error: 'Missing team authorization.' });
-    }
-
-    const team = await Team.findById(user.team_id);
-    if (!team) {
-      return res.status(404).json({ success: false, error: 'Team not found.' });
-    }
-
-    const allQuestions = await db.syncDefaultQuestions();
-    if (!allQuestions || allQuestions.length === 0) {
-      return res.status(400).json({ success: false, error: 'No Stage 7 quiz questions configured.' });
-    }
-
-    let assignedQuestion = null;
-    if (team.stage7_question_id) {
-      assignedQuestion = allQuestions.find(q => q._id.toString() === team.stage7_question_id.toString());
-    }
-
-    // If no question assigned yet or assigned question was deleted, pick a random shuffled question from pool
-    if (!assignedQuestion) {
-      const randomIndex = Math.floor(Math.random() * allQuestions.length);
-      assignedQuestion = allQuestions[randomIndex];
-      team.stage7_question_id = assignedQuestion._id;
-      await team.save();
-    }
-
-    res.json({
-      success: true,
-      question: {
-        id: assignedQuestion._id,
-        question_text: assignedQuestion.question_text,
-        options: assignedQuestion.options
-      },
-      total_pool_questions: allQuestions.length,
-      quiz_passed: team.stage7_quiz_passed || false,
-      wrong_attempts: team.stage7_wrong_attempts || 0,
-      max_wrong_attempts: 2,
-      team_status: team.status
-    });
-  } catch (err) {
-    console.error('Get Stage 7 Quiz error:', err);
-    res.status(500).json({ success: false, error: err.message || 'Failed to fetch Stage 7 Quiz question.' });
   }
 };
 
