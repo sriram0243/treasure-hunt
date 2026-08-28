@@ -131,8 +131,8 @@ export default function QuestionManagerModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-4xl bg-[#0D261E] border-2 border-[#F59E0B] rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 relative text-left my-8 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto pb-safe">
+      <div className="w-full max-w-4xl bg-[#0D261E] border-2 border-[#F59E0B] rounded-3xl p-5 md:p-8 shadow-2xl space-y-6 relative text-left my-auto max-h-[85vh] overflow-y-auto">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-emerald-800/80 pb-4">

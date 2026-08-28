@@ -72,8 +72,8 @@ export default function StageManagerModal({ isOpen = true, onClose }) {
   const activeStage = stages.find(s => s.stage_number === selectedStageNumber) || stages[0];
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#030d0a]/90 backdrop-blur-md animate-fade-in overflow-y-auto">
-      <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#0d261e] via-[#091b15] to-[#05110d] border-2 border-amber-500/50 rounded-3xl p-6 sm:p-8 shadow-[0_0_60px_rgba(245,158,11,0.25)] text-left my-8">
+    <div className="fixed inset-0 z-[110] flex items-start sm:items-center justify-center p-3 sm:p-6 bg-[#030d0a]/90 backdrop-blur-md animate-fade-in overflow-y-auto pb-safe">
+      <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#0d261e] via-[#091b15] to-[#05110d] border-2 border-amber-500/50 rounded-3xl p-5 sm:p-8 shadow-[0_0_60px_rgba(245,158,11,0.25)] text-left my-auto max-h-[88vh] overflow-y-auto">
         
         {/* Close Button */}
         <button

@@ -14,8 +14,6 @@
 
 html, body {
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  overscroll-behavior-y: none;
   font-family: var(--font-body);
   background-color: var(--color-bg-dark);
   color: #E2E8F0;
@@ -23,11 +21,18 @@ html, body {
   min-height: 100dvh;
   margin: 0;
   overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background-image: 
     radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.15), transparent 70%),
     radial-gradient(circle at 100% 100%, rgba(13, 38, 30, 0.8), transparent 50%),
     radial-gradient(circle at 0% 50%, rgba(5, 26, 18, 0.9), transparent 50%);
   background-attachment: fixed;
+}
+
+/* Touch manipulation only on interactive controls to prevent 300ms click delay without locking body scroll */
+button, input, select, textarea, a, label {
+  touch-action: manipulation;
 }
 
 /* Android & Mobile Safe Area Inset Classes */
