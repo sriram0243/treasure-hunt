@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import { getSocket, joinTeamRoom } from '../api/socket';
 import { playScanErrorSound, playScanSuccessSound, playStageUnlockSound } from '../utils/soundEffects';
 
-export default function GameView({ userSession, onGameCompleted, setUserSession }) {
+export default function GameView({ userSession, onGameCompleted, setUserSession, onWinnerDeclared }) {
   const [progressData, setProgressData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -22,6 +22,11 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
 
   useEffect(() => {
     fetchLatestProgress();
+
+    // Auto-poll progress every 3s to guarantee real-time winner updates across serverless environments
+    const pollInterval = setInterval(() => {
+      fetchLatestProgress();
+    }, 3000);
 
     // Setup Socket.IO subscription
     const socket = getSocket();
@@ -46,7 +51,11 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
 
     const handleWinnerDeclared = (data) => {
       console.log('🏆 Real-time winner declared event in GameView:', data);
-      setRealtimeNotice(`🏆 TREASURE FOUND! Team ${data.winner_team_name} has won the hunt!`);
+      const wName = data.winner_team_name || data.winner_name;
+      setRealtimeNotice(`🏆 TREASURE FOUND! Team ${wName || ''} has won the hunt!`);
+      if (wName && onWinnerDeclared) {
+        onWinnerDeclared(wName);
+      }
       fetchLatestProgress();
       setTimeout(() => {
         onGameCompleted();
@@ -90,6 +99,7 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
     socket.on('team_disqualified', handleTeamDisqualifiedSocket);
 
     return () => {
+      clearInterval(pollInterval);
       socket.off('stage_completed', handleStageCompleted);
       socket.off('wrong_scan', handleWrongScan);
       socket.off('hunt_winner_declared', handleWinnerDeclared);
@@ -107,6 +117,12 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
       const data = await api.getTeamProgress();
       if (data.success) {
         setProgressData(data);
+        if (data.hunt?.winner_name) {
+          setRealtimeNotice(`🏆 TREASURE FOUND! Team "${data.hunt.winner_name}" has won the hunt!`);
+          if (onWinnerDeclared) {
+            onWinnerDeclared(data.hunt.winner_name);
+          }
+        }
         if (data.is_completed || data.hunt?.status === 'CLOSED') {
           onGameCompleted();
         }

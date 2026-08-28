@@ -95,6 +95,7 @@ export default function App() {
             userSession={userSession}
             setUserSession={setUserSession}
             onGameCompleted={() => setViewMode('victory')}
+            onWinnerDeclared={(wName) => setGlobalWinnerModal({ winner_name: wName })}
           />
         )}
 
