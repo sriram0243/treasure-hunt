@@ -109,8 +109,8 @@ export default function ScannerModal({ isOpen, onClose, onScanSuccess }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-md bg-[#0D261E] border-2 border-[#F59E0B] rounded-2xl p-5 shadow-[0_0_40px_rgba(245,158,11,0.3)] text-[#E2E8F0]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in overflow-y-auto pb-safe">
+      <div className="relative w-full max-w-md bg-[#0D261E] border-2 border-[#F59E0B] rounded-2xl p-4 sm:p-5 shadow-[0_0_40px_rgba(245,158,11,0.3)] text-[#E2E8F0] my-auto max-h-[92dvh] overflow-y-auto">
         
         {/* Header Bar */}
         <div className="flex items-center justify-between pb-3 border-b border-amber-900/60 mb-4">
@@ -221,8 +221,9 @@ export default function ScannerModal({ isOpen, onClose, onScanSuccess }) {
               <input
                 type="file"
                 accept="image/*"
+                capture="environment"
                 onChange={handleFileUpload}
-                className="w-full text-xs text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#1E4637] file:text-amber-200 hover:file:bg-emerald-800 cursor-pointer"
+                className="w-full text-xs text-gray-400 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#1E4637] file:text-amber-200 hover:file:bg-emerald-800 cursor-pointer"
               />
             </div>
 

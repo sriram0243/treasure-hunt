@@ -12,11 +12,15 @@
   --color-leather: #2B1B12;
 }
 
-body {
+html, body {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
   font-family: var(--font-body);
   background-color: var(--color-bg-dark);
   color: #E2E8F0;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   overflow-x: hidden;
   background-image: 
@@ -24,6 +28,14 @@ body {
     radial-gradient(circle at 100% 100%, rgba(13, 38, 30, 0.8), transparent 50%),
     radial-gradient(circle at 0% 50%, rgba(5, 26, 18, 0.9), transparent 50%);
   background-attachment: fixed;
+}
+
+/* Android & Mobile Safe Area Inset Classes */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
 }
 
 h1, h2, h3, h4, .font-heading {

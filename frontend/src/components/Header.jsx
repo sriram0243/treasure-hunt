@@ -9,7 +9,7 @@ export default function Header({ soundOn, setSoundOn, onResetSession, currentSta
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-[#071912]/90 backdrop-blur-md border-b border-[#F59E0B]/30 px-4 py-3 shadow-lg">
+    <header className="sticky top-0 z-40 bg-[#071912]/95 backdrop-blur-md border-b border-[#F59E0B]/30 px-3 sm:px-4 py-2.5 sm:py-3 shadow-lg pt-safe">
       <div className="max-w-5xl mx-auto flex items-center justify-between">
         
         {/* Brand Logo / Title */}
