@@ -783,7 +783,7 @@ exports.resetTeamProgress = async (req, res) => {
   }
 };
 
-// GET Stage 7 Quiz Questions (Sanitized without correct answer indices)
+// GET Stage 7 Quiz Question (1 randomized question assigned per team from pool)
 exports.getStage7Quiz = async (req, res) => {
   try {
     const user = req.user;
@@ -796,18 +796,32 @@ exports.getStage7Quiz = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Team not found.' });
     }
 
-    const questionsList = await Question.find().sort({ created_at: 1 });
+    const allQuestions = await Question.find();
+    if (!allQuestions || allQuestions.length === 0) {
+      return res.status(400).json({ success: false, error: 'No Stage 7 quiz questions configured.' });
+    }
 
-    const sanitizedQuestions = questionsList.map((q, idx) => ({
-      id: q._id,
-      index: idx + 1,
-      question_text: q.question_text,
-      options: q.options
-    }));
+    let assignedQuestion = null;
+    if (team.stage7_question_id) {
+      assignedQuestion = allQuestions.find(q => q._id.toString() === team.stage7_question_id.toString());
+    }
+
+    // If no question assigned yet or assigned question was deleted, pick a random shuffled question from pool
+    if (!assignedQuestion) {
+      const randomIndex = Math.floor(Math.random() * allQuestions.length);
+      assignedQuestion = allQuestions[randomIndex];
+      team.stage7_question_id = assignedQuestion._id;
+      await team.save();
+    }
 
     res.json({
       success: true,
-      questions: sanitizedQuestions,
+      question: {
+        id: assignedQuestion._id,
+        question_text: assignedQuestion.question_text,
+        options: assignedQuestion.options
+      },
+      total_pool_questions: allQuestions.length,
       quiz_passed: team.stage7_quiz_passed || false,
       wrong_attempts: team.stage7_wrong_attempts || 0,
       max_wrong_attempts: 2,
@@ -815,15 +829,16 @@ exports.getStage7Quiz = async (req, res) => {
     });
   } catch (err) {
     console.error('Get Stage 7 Quiz error:', err);
-    res.status(500).json({ success: false, error: err.message || 'Failed to fetch Stage 7 Quiz.' });
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch Stage 7 Quiz question.' });
   }
 };
 
-// SUBMIT Stage 7 Quiz Answers
+// SUBMIT Stage 7 Single Assigned Question Answer
 exports.submitStage7Quiz = async (req, res) => {
   try {
     const user = req.user;
-    const { answers } = req.body || {}; // array of option indices selected: [1, 0, 2, ...]
+    const { selected_option_index, answer } = req.body || {};
+    const chosenIndex = selected_option_index !== undefined ? parseInt(selected_option_index) : parseInt(answer);
 
     if (!user || !user.team_id) {
       return res.status(400).json({ success: false, error: 'Missing team authorization.' });
@@ -850,34 +865,26 @@ exports.submitStage7Quiz = async (req, res) => {
       });
     }
 
-    const questions = await Question.find().sort({ created_at: 1 });
-
-    if (!questions || questions.length === 0) {
-      return res.status(400).json({ success: false, error: 'No quiz questions configured.' });
-    }
-
-    if (!Array.isArray(answers) || answers.length !== questions.length) {
+    if (isNaN(chosenIndex) || chosenIndex < 0 || chosenIndex > 3) {
       return res.status(400).json({
         success: false,
-        error: `Please answer all ${questions.length} questions before submitting.`
+        error: 'Please select one of the 4 options before submitting.'
       });
     }
 
-    // Check answers
-    let allCorrect = true;
-    let wrongCountInSubmission = 0;
+    if (!team.stage7_question_id) {
+      return res.status(400).json({ success: false, error: 'No question assigned for this team.' });
+    }
 
-    questions.forEach((q, idx) => {
-      const chosen = parseInt(answers[idx]);
-      if (chosen !== q.correct_option_index) {
-        allCorrect = false;
-        wrongCountInSubmission++;
-      }
-    });
+    const question = await Question.findById(team.stage7_question_id);
+    if (!question) {
+      return res.status(404).json({ success: false, error: 'Assigned question not found.' });
+    }
 
+    const isCorrect = chosenIndex === question.correct_option_index;
     const io = req.app.get('io');
 
-    if (allCorrect) {
+    if (isCorrect) {
       team.stage7_quiz_passed = true;
       await team.save();
 
@@ -892,7 +899,7 @@ exports.submitStage7Quiz = async (req, res) => {
       return res.json({
         success: true,
         quiz_passed: true,
-        message: '🎉 CONGRATULATIONS! You solved all Stage 7 questions correctly! QR Scanner is now UNLOCKED.'
+        message: '🎉 CONGRATULATIONS! Correct answer! Stage 7 QR Code Scanner is now UNLOCKED.'
       });
     } else {
       team.stage7_wrong_attempts = (team.stage7_wrong_attempts || 0) + 1;
@@ -905,7 +912,7 @@ exports.submitStage7Quiz = async (req, res) => {
           io.to(`team:${team._id}`).emit('team_disqualified', {
             team_id: team._id,
             team_name: team.team_name,
-            reason: 'Exceeded maximum 2 allowed wrong attempts on Stage 7 Quiz.'
+            reason: 'Exceeded maximum 2 allowed wrong attempts on Stage 7 Question.'
           });
 
           io.to('admin').emit('team_disqualified_admin', {
@@ -918,7 +925,7 @@ exports.submitStage7Quiz = async (req, res) => {
           success: false,
           disqualified: true,
           wrong_attempts: team.stage7_wrong_attempts,
-          message: '❌ TEAM DISQUALIFIED: You exceeded the maximum 2 allowed wrong attempts on Stage 7 Quiz.'
+          message: '❌ TEAM DISQUALIFIED: You answered incorrectly on your 2nd attempt.'
         });
       } else {
         await team.save();
@@ -936,7 +943,7 @@ exports.submitStage7Quiz = async (req, res) => {
           disqualified: false,
           wrong_attempts: team.stage7_wrong_attempts,
           remaining_attempts: 1,
-          message: `⚠️ INCORRECT QUIZ SUBMISSION! (${wrongCountInSubmission} incorrect answer${wrongCountInSubmission > 1 ? 's' : ''}). You have 1 attempt remaining before team disqualification.`
+          message: '⚠️ INCORRECT ANSWER! You have 1 attempt remaining before team disqualification.'
         });
       }
     }

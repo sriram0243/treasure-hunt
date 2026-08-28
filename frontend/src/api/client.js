@@ -74,10 +74,14 @@ export const api = {
   // Stage 7 Quiz Challenge
   getStage7Quiz: () => fetchJson('/game/stage7-quiz'),
 
-  submitStage7Quiz: (answers) =>
+  submitStage7Quiz: (selectedOptionIndex) =>
     fetchJson('/game/stage7-quiz/submit', {
       method: 'POST',
-      body: JSON.stringify({ answers })
+      body: JSON.stringify(
+        typeof selectedOptionIndex === 'object'
+          ? selectedOptionIndex
+          : { selected_option_index: selectedOptionIndex }
+      )
     }),
 
   // Feedback
