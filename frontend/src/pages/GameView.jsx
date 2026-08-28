@@ -491,12 +491,12 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
         </div>
       </div>
 
-      {/* Currently Unlocked Hint Section */}
+      {/* Currently Unlocked Location Hint Section */}
       {currentHint.clue_text && (
         <div className="bg-[#0D261E]/90 border-2 border-amber-500/60 rounded-3xl p-6 shadow-xl space-y-3 relative overflow-hidden">
           <div className="flex items-center space-x-2 text-amber-400 font-bold text-sm tracking-wider uppercase">
             <Scroll className="w-5 h-5 text-amber-400" />
-            <span>🔎 CURRENT TEAM UNLOCKED HINT</span>
+            <span>📍 THE LOCATION HINT (CURRENT STAGE TREASURE LOCATION)</span>
           </div>
 
           <div className="p-5 bg-[#061711] border border-amber-500/30 rounded-2xl font-serif text-amber-100 text-sm md:text-base leading-relaxed italic shadow-inner">
@@ -504,7 +504,7 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
           </div>
 
           <p className="text-xs text-emerald-300">
-            Follow this clue to locate your team's next mark on campus!
+            Use this location hint to identify and navigate to your current stage treasure mark on campus!
           </p>
         </div>
       )}
