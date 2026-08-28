@@ -71,6 +71,15 @@ export const api = {
       method: 'POST'
     }),
 
+  // Stage 7 Quiz Challenge
+  getStage7Quiz: () => fetchJson('/game/stage7-quiz'),
+
+  submitStage7Quiz: (answers) =>
+    fetchJson('/game/stage7-quiz/submit', {
+      method: 'POST',
+      body: JSON.stringify({ answers })
+    }),
+
   // Feedback
   submitFeedback: (payload) =>
     fetchJson('/game/feedback', {
@@ -123,6 +132,26 @@ export const api = {
     fetchJson(`/admin/stages/${stage_id}`, {
       method: 'PUT',
       body: JSON.stringify(stage_data)
+    }),
+
+  // Admin Question CRUD
+  getQuestions: () => fetchJson('/admin/questions'),
+
+  addQuestion: (data) =>
+    fetchJson('/admin/questions', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+
+  updateQuestion: (id, data) =>
+    fetchJson(`/admin/questions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+
+  deleteQuestion: (id) =>
+    fetchJson(`/admin/questions/${id}`, {
+      method: 'DELETE'
     })
 };
 

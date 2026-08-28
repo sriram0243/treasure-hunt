@@ -22,6 +22,10 @@ router.post('/scan', requireTeamLeader, gameController.scanToken);
 // Anti-Cheat Progress Reset (When Leader leaves page / exits fullscreen)
 router.post('/reset-progress', requireAuth, gameController.resetTeamProgress);
 
+// Stage 7 Quiz Challenge
+router.get('/stage7-quiz', requireAuth, gameController.getStage7Quiz);
+router.post('/stage7-quiz/submit', requireAuth, gameController.submitStage7Quiz);
+
 // Participant Feedback
 router.post('/feedback', requireAuth, gameController.submitFeedback);
 

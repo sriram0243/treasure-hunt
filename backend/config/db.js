@@ -73,6 +73,61 @@ async function connectDB() {
   }
 }
 
+const Question = require('../models/Question');
+
+const DEFAULT_QUESTIONS = [
+  {
+    question_text: "What cardinal direction does a magnetic compass needle point toward?",
+    options: ["South", "North", "East", "West"],
+    correct_option_index: 1
+  },
+  {
+    question_text: "How many total stages must a team complete in this Treasure Hunt?",
+    options: ["5 Stages", "6 Stages", "7 Stages", "8 Stages"],
+    correct_option_index: 2
+  },
+  {
+    question_text: "Which campus location is traditionally known as the sanctuary where knowledge sleeps?",
+    options: ["Main Library", "Sports Complex", "Dining Hall", "Auditorium"],
+    correct_option_index: 0
+  },
+  {
+    question_text: "What key tool is required to scan physical marks at landmark locations?",
+    options: ["NFC Scanner", "QR Code Reader / Camera", "Bluetooth Radar", "Bar Code Wand"],
+    correct_option_index: 1
+  },
+  {
+    question_text: "What is the maximum number of wrong attempts allowed on this Stage 7 Quiz before team disqualification?",
+    options: ["1 Attempt", "2 Attempts", "3 Attempts", "5 Attempts"],
+    correct_option_index: 1
+  },
+  {
+    question_text: "In nautical lore, what color flag is historically associated with pirate treasure ships?",
+    options: ["Jolly Roger (Black & Skull)", "Royal Blue", "Crimson Red", "Golden Yellow"],
+    correct_option_index: 0
+  },
+  {
+    question_text: "What primary role in the team is authorized to control QR scanning during the hunt?",
+    options: ["Any Team Member", "Team Leader Only", "Event Volunteer", "System Admin Only"],
+    correct_option_index: 1
+  },
+  {
+    question_text: "What is the ancient unit of measure traditionally used by sailors to measure ocean depth?",
+    options: ["Fathom", "League", "Knot", "Cubits"],
+    correct_option_index: 0
+  },
+  {
+    question_text: "Which instrument was historically used by maritime explorers to navigate using the stars?",
+    options: ["Sextant", "Barometer", "Thermometer", "Altimeter"],
+    correct_option_index: 0
+  },
+  {
+    question_text: "What awaits the winning team at the final destination upon unlocking Stage 7?",
+    options: ["The Golden Treasure Chest", "A Silver Key", "A Wooden Scroll", "A Bronze Trophy"],
+    correct_option_index: 0
+  }
+];
+
 async function autoSeedDB() {
   try {
     // 1. Seed Stages
@@ -124,6 +179,13 @@ async function autoSeedDB() {
         status: 'LIVE'
       });
       console.log('✓ Seeded Global Hunt State (LIVE)');
+    }
+
+    // 5. Seed Stage 7 Quiz Questions
+    const questionCount = await Question.countDocuments();
+    if (questionCount === 0) {
+      await Question.insertMany(DEFAULT_QUESTIONS);
+      console.log('✓ Seeded 10 Default Stage 7 Quiz Questions');
     }
   } catch (err) {
     console.error('Auto seed error:', err.message);

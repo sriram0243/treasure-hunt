@@ -3,6 +3,8 @@ import { Shield, Lock, Users, Trophy, QrCode, MessageSquare, LogOut, RefreshCw, 
 import { api } from '../api/client';
 import { getSocket, joinAdminRoom } from '../api/socket';
 import StageManagerModal from '../components/StageManagerModal';
+import QuestionManagerModal from '../components/QuestionManagerModal';
+import { HelpCircle } from 'lucide-react';
 
 export default function AdminDashboard({ onOpenQRManagement }) {
   const [token, setToken] = useState(localStorage.getItem('th_admin_token') || '');
@@ -16,6 +18,7 @@ export default function AdminDashboard({ onOpenQRManagement }) {
   const [selectedTeam, setSelectedTeam] = useState(null); // Detail modal team object
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showStageModal, setShowStageModal] = useState(false);
+  const [showQuizQuestionModal, setShowQuizQuestionModal] = useState(false);
 
   // Settings form state
   const [minMembers, setMinMembers] = useState(4);
@@ -293,6 +296,14 @@ export default function AdminDashboard({ onOpenQRManagement }) {
           >
             <Edit3 className="w-4 h-4 text-amber-400" />
             <span>Stage Questions</span>
+          </button>
+
+          <button
+            onClick={() => setShowQuizQuestionModal(true)}
+            className="px-3.5 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 text-[#071912] font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md hover:brightness-110 cursor-pointer"
+          >
+            <HelpCircle className="w-4 h-4 fill-current" />
+            <span>Stage 7 Quiz</span>
           </button>
 
           <button
@@ -658,12 +669,17 @@ export default function AdminDashboard({ onOpenQRManagement }) {
         </div>
       )}
 
-      {/* Stage Questions & Headings Editor Modal */}
-      {showStageModal && (
-        <StageManagerModal onClose={() => setShowStageModal(false)} />
-      )}
+      {/* Stage Manager Modal */}
+      <StageManagerModal
+        isOpen={showStageModal}
+        onClose={() => setShowStageModal(false)}
+      />
 
+      {/* Stage 7 Quiz Question Manager Modal */}
+      <QuestionManagerModal
+        isOpen={showQuizQuestionModal}
+        onClose={() => setShowQuizQuestionModal(false)}
+      />
     </div>
   );
 }
-

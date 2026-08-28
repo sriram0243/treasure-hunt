@@ -9,6 +9,7 @@ const Hunt = require('../models/Hunt');
 const AppSettings = require('../models/AppSettings');
 const ScanAttempt = require('../models/ScanAttempt');
 const Feedback = require('../models/Feedback');
+const Question = require('../models/Question');
 
 function formatDuration(totalSeconds) {
   if (!totalSeconds || isNaN(totalSeconds)) return 'N/A';
@@ -447,5 +448,82 @@ exports.updateStage = async (req, res) => {
   } catch (err) {
     console.error("updateStage error:", err);
     res.status(500).json({ success: false, error: err.message || 'Failed to update stage.' });
+  }
+};
+
+// GET All Quiz Questions (Admin)
+exports.getAllQuestions = async (req, res) => {
+  try {
+    const questions = await Question.find().sort({ created_at: 1 });
+    res.json({ success: true, questions: questions || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch questions.' });
+  }
+};
+
+// ADD New Quiz Question (Admin)
+exports.addQuestion = async (req, res) => {
+  try {
+    const { question_text, options, correct_option_index } = req.body || {};
+
+    if (!question_text || !question_text.trim()) {
+      return res.status(400).json({ success: false, error: 'Question text is required.' });
+    }
+    if (!Array.isArray(options) || options.length !== 4) {
+      return res.status(400).json({ success: false, error: 'Exactly 4 options are required.' });
+    }
+    if (correct_option_index === undefined || correct_option_index < 0 || correct_option_index > 3) {
+      return res.status(400).json({ success: false, error: 'Correct option index must be 0, 1, 2, or 3.' });
+    }
+
+    const newQ = await Question.create({
+      question_text: question_text.trim(),
+      options: options.map(o => o.trim()),
+      correct_option_index: parseInt(correct_option_index)
+    });
+
+    res.json({ success: true, message: 'Question added successfully.', question: newQ });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to add question.' });
+  }
+};
+
+// UPDATE Quiz Question (Admin)
+exports.updateQuestion = async (req, res) => {
+  try {
+    const qId = req.params.id;
+    const { question_text, options, correct_option_index } = req.body || {};
+
+    if (!question_text || !question_text.trim()) {
+      return res.status(400).json({ success: false, error: 'Question text is required.' });
+    }
+    if (!Array.isArray(options) || options.length !== 4) {
+      return res.status(400).json({ success: false, error: 'Exactly 4 options are required.' });
+    }
+
+    const updated = await Question.findByIdAndUpdate(
+      qId,
+      {
+        question_text: question_text.trim(),
+        options: options.map(o => o.trim()),
+        correct_option_index: parseInt(correct_option_index)
+      },
+      { new: true }
+    );
+
+    res.json({ success: true, message: 'Question updated successfully.', question: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to update question.' });
+  }
+};
+
+// DELETE Quiz Question (Admin)
+exports.deleteQuestion = async (req, res) => {
+  try {
+    const qId = req.params.id;
+    await Question.findByIdAndDelete(qId);
+    res.json({ success: true, message: 'Question deleted successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to delete question.' });
   }
 };

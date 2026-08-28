@@ -3,6 +3,7 @@ import { Camera, MapPin, Sparkles, AlertOctagon, CheckCircle2, RefreshCw, Scroll
 import ProgressBar from '../components/ProgressBar';
 import ScannerModal from '../components/ScannerModal';
 import ClueCard from '../components/ClueCard';
+import Stage7QuizCard from '../components/Stage7QuizCard';
 import { api } from '../api/client';
 import { getSocket, joinTeamRoom } from '../api/socket';
 import { playScanErrorSound, playScanSuccessSound, playStageUnlockSound } from '../utils/soundEffects';
@@ -66,20 +67,37 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
       );
     };
 
+    const handleStage7QuizPassedSocket = (data) => {
+      console.log('🎉 Real-time stage7_quiz_passed event received:', data);
+      setRealtimeNotice('🎉 STAGE 7 QUIZ PASSED! Stage 7 QR Code Scanner is now unlocked!');
+      playStageUnlockSound();
+      fetchLatestProgress();
+    };
+
+    const handleTeamDisqualifiedSocket = (data) => {
+      console.log('❌ Real-time team_disqualified event received:', data);
+      playScanErrorSound();
+      fetchLatestProgress();
+    };
+
     socket.on('stage_completed', handleStageCompleted);
-    socket.on('wrong_qr_scan', handleWrongScan);
+    socket.on('wrong_scan', handleWrongScan);
     socket.on('hunt_winner_declared', handleWinnerDeclared);
     socket.on('hunt_closed', handleWinnerDeclared);
     socket.on('stage_updated', handleStageUpdated);
     socket.on('team_progress_reset', handleTeamProgressReset);
+    socket.on('stage7_quiz_passed', handleStage7QuizPassedSocket);
+    socket.on('team_disqualified', handleTeamDisqualifiedSocket);
 
     return () => {
       socket.off('stage_completed', handleStageCompleted);
-      socket.off('wrong_qr_scan', handleWrongScan);
+      socket.off('wrong_scan', handleWrongScan);
       socket.off('hunt_winner_declared', handleWinnerDeclared);
       socket.off('hunt_closed', handleWinnerDeclared);
       socket.off('stage_updated', handleStageUpdated);
       socket.off('team_progress_reset', handleTeamProgressReset);
+      socket.off('stage7_quiz_passed', handleStage7QuizPassedSocket);
+      socket.off('team_disqualified', handleTeamDisqualifiedSocket);
     };
   }, [userSession]);
 
@@ -462,8 +480,18 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
             "{currentHint.mission_description || 'Locate the hidden QR mark for this location.'}"
           </p>
 
-          {/* Scanner Controls (TEAM LEADER ONLY) */}
-          {isLeader ? (
+          {/* Scanner Controls OR Stage 7 Quiz Lock */}
+          {currentPos === 7 && !(progressData?.team?.stage7_quiz_passed) ? (
+            <div className="pt-4 p-4 bg-amber-950/80 border-2 border-amber-500/60 rounded-2xl inline-block max-w-lg mx-auto text-center space-y-2 shadow-inner">
+              <p className="text-xs font-black text-amber-300 uppercase tracking-widest flex items-center justify-center gap-1.5">
+                <Lock className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span>STAGE 7 QR SCANNER IS LOCKED</span>
+              </p>
+              <p className="text-xs text-amber-100/90 leading-relaxed">
+                You must complete and pass the 10-Question Stage 7 Final Quiz below to unlock the QR scanner!
+              </p>
+            </div>
+          ) : isLeader ? (
             <div className="pt-4">
               <button
                 onClick={() => setIsScannerOpen(true)}
@@ -490,6 +518,40 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
 
         </div>
       </div>
+
+      {/* DISQUALIFIED TEAM ALERT */}
+      {teamInfo.status === 'DISQUALIFIED' && (
+        <div className="p-8 bg-[#1A0606] border-2 border-red-600 rounded-3xl text-center space-y-4 shadow-[0_0_50px_rgba(239,68,68,0.4)]">
+          <div className="w-20 h-20 bg-red-950 border-2 border-red-500 rounded-full flex items-center justify-center mx-auto text-red-500 animate-bounce">
+            <AlertOctagon className="w-12 h-12" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-3xl font-black font-heading text-red-200 tracking-wider">
+              ❌ TEAM DISQUALIFIED
+            </h2>
+            <p className="text-sm text-red-300/90 max-w-lg mx-auto leading-relaxed">
+              Your team has been disqualified from the Treasure Hunt for exceeding the maximum 2 allowed wrong attempts on the Stage 7 Final Quiz.
+            </p>
+          </div>
+          <p className="text-xs text-red-400 font-mono">
+            Contact event administrators for assistance or hunt reset.
+          </p>
+        </div>
+      )}
+
+      {/* STAGE 7 QUIZ CHALLENGE (Mandatory before scanning Stage 7 QR Code) */}
+      {currentPos === 7 && !(progressData?.team?.stage7_quiz_passed) && teamInfo.status !== 'DISQUALIFIED' && (
+        <Stage7QuizCard
+          isLeader={isLeader}
+          onQuizSuccess={() => {
+            fetchLatestProgress();
+          }}
+          onQuizDisqualified={() => {
+            fetchLatestProgress();
+          }}
+          fetchLatestProgress={fetchLatestProgress}
+        />
+      )}
 
       {/* Currently Unlocked Location Hint Section */}
       {currentHint.clue_text && (
