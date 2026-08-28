@@ -4,11 +4,7 @@ import { api } from '../api/client';
 
 export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authTab, setAuthTab] = useState('register'); // 'register' | 'leader-login' | 'member-login'
-  
-  // Capacity & Settings state
-  const [capacityInfo, setCapacityInfo] = useState(null);
-  const [settingsInfo, setSettingsInfo] = useState({ min_team_members: 4, default_team_members: 5, max_team_members: 10, max_total_participants: 150 });
+  const [authTab, setAuthTab] = useState('register'); // 'register' | 'leader-login'
 
   // Registration Form state
   const [teamName, setTeamName] = useState('');
@@ -17,29 +13,9 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
   // Login Form state
   const [loginTeamName, setLoginTeamName] = useState('');
   const [loginLeaderName, setLoginLeaderName] = useState('');
-  const [memberTeamName, setMemberTeamName] = useState('');
-  const [memberName, setMemberName] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    fetchCapacity();
-  }, []);
-
-  const fetchCapacity = async () => {
-    try {
-      const res = await api.getCapacity();
-      if (res.success) {
-        setCapacityInfo(res.capacity);
-        if (res.settings) {
-          setSettingsInfo(res.settings);
-        }
-      }
-    } catch (err) {
-      console.warn('Could not fetch capacity info:', err);
-    }
-  };
 
   const tryEnterFullscreen = () => {
     try {
@@ -113,35 +89,6 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
     }
   };
 
-
-  // Submit Team Member Quick Login
-  const handleMemberLoginSubmit = async (e) => {
-    e.preventDefault();
-    if (!memberTeamName.trim() || !memberName.trim()) {
-      setError('Please enter both Registered Team Name and Your Name.');
-      return;
-    }
-
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await api.loginTeamMember(memberTeamName.trim(), memberName.trim());
-      if (res.success && res.token) {
-        localStorage.setItem('th_jwt_token', res.token);
-        onStartHunt(res.user);
-        setShowAuthModal(false);
-      } else {
-        setError(res.error || 'Team member login failed.');
-      }
-    } catch (err) {
-      setError(err.message || 'Team member login failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-[90vh] flex flex-col items-center justify-center px-4 py-8 relative">
       
@@ -170,52 +117,18 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
           "7 Stages • Randomized Routes • Live Real-Time Competition"
         </p>
 
-        {/* Capacity Progress Counter Card */}
-        {capacityInfo && (
-          <div className="max-w-md mx-auto p-4 bg-[#0D261E]/90 border border-amber-500/40 rounded-2xl backdrop-blur-md text-left space-y-2 shadow-lg">
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-amber-400" />
-                Participant Capacity
-              </span>
-              <span className="text-amber-200 font-mono text-sm">
-                {capacityInfo.current_total_members} / {capacityInfo.max_total_participants}
-              </span>
-            </div>
-
-            {/* Capacity Meter Bar */}
-            <div className="w-full bg-emerald-950 rounded-full h-3 overflow-hidden border border-emerald-800">
-              <div
-                className={`h-full transition-all duration-700 rounded-full ${
-                  capacityInfo.is_full ? 'bg-red-500' : 'bg-gradient-to-r from-amber-500 to-yellow-400'
-                }`}
-                style={{ width: `${Math.min(100, (capacityInfo.current_total_members / capacityInfo.max_total_participants) * 100)}%` }}
-              />
-            </div>
-
-            <div className="flex justify-between items-center text-[11px] text-emerald-300">
-              <span>{capacityInfo.spots_remaining} spots remaining</span>
-              {capacityInfo.is_full && (
-                <span className="text-red-400 font-bold flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" /> Capacity Full
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Active User Session Banner */}
         {userSession && (
           <div className="bg-amber-950/70 border border-[#F59E0B] p-4 rounded-2xl max-w-md mx-auto text-left flex items-center justify-between shadow-lg">
             <div>
               <p className="text-xs font-bold text-amber-300">LOGGED IN TEAM SESSION</p>
               <p className="text-xs text-emerald-200">
-                Team: <span className="font-bold text-amber-100">{userSession.team_name}</span> ({userSession.role === 'TEAM_LEADER' ? '👑 Leader' : '👀 Member'})
+                Team: <span className="font-bold text-amber-100">{userSession.team_name}</span> (👑 Team Leader)
               </p>
             </div>
             <button
               onClick={() => onStartHunt(userSession)}
-              className="px-5 py-2.5 bg-[#FBBF24] hover:bg-amber-300 text-[#071912] font-bold text-xs rounded-xl transition-transform active:scale-95 shadow-md flex items-center gap-1.5"
+              className="px-5 py-2.5 bg-[#FBBF24] hover:bg-amber-300 text-[#071912] font-bold text-xs rounded-xl transition-transform active:scale-95 shadow-md flex items-center gap-1.5 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>GO TO HUNT</span>
@@ -227,7 +140,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
           <button
             onClick={() => { setError(null); setShowAuthModal(true); setAuthTab('register'); }}
-            className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-amber-500 via-amber-400 to-[#FBBF24] text-[#071912] font-heading font-extrabold text-base md:text-lg rounded-2xl shadow-[0_0_25px_rgba(245,158,11,0.5)] border-2 border-amber-200 hover:scale-105 transition-all flex items-center justify-center space-x-3 active:scale-95"
+            className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-amber-500 via-amber-400 to-[#FBBF24] text-[#071912] font-heading font-extrabold text-base md:text-lg rounded-2xl shadow-[0_0_25px_rgba(245,158,11,0.5)] border-2 border-amber-200 hover:scale-105 transition-all flex items-center justify-center space-x-3 active:scale-95 cursor-pointer"
           >
             <Users className="w-5 h-5 fill-current" />
             <span>REGISTER TEAM</span>
@@ -235,7 +148,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
 
           <button
             onClick={() => { setError(null); setShowAuthModal(true); setAuthTab('leader-login'); }}
-            className="w-full sm:w-auto px-7 py-4 bg-[#0D261E] hover:bg-emerald-900/80 text-amber-200 font-heading font-bold text-base rounded-2xl border-2 border-[#F59E0B]/50 transition-all flex items-center justify-center space-x-2"
+            className="w-full sm:w-auto px-7 py-4 bg-[#0D261E] hover:bg-emerald-900/80 text-amber-200 font-heading font-bold text-base rounded-2xl border-2 border-[#F59E0B]/50 transition-all flex items-center justify-center space-x-2 cursor-pointer"
           >
             <LogIn className="w-5 h-5 text-[#FBBF24]" />
             <span>TEAM LOGIN</span>
@@ -243,7 +156,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
 
           <button
             onClick={onOpenGuide}
-            className="w-full sm:w-auto px-6 py-4 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 font-semibold text-sm rounded-2xl border border-emerald-800 transition"
+            className="w-full sm:w-auto px-6 py-4 bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 font-semibold text-sm rounded-2xl border border-emerald-800 transition cursor-pointer"
           >
             <span>RULES & GUIDE</span>
           </button>
@@ -254,7 +167,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
       {/* Team Auth / Registration Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-          <div className="w-full max-w-xl bg-[#0D261E] border-2 border-[#F59E0B] rounded-3xl p-6 sm:p-8 shadow-2xl relative text-left my-8">
+          <div className="w-full max-w-lg bg-[#0D261E] border-2 border-[#F59E0B] rounded-3xl p-6 sm:p-8 shadow-2xl relative text-left my-8">
             
             {/* Modal Tabs */}
             <div className="flex border-b border-emerald-800/80 mb-6 gap-2">
@@ -278,18 +191,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
                     : 'bg-emerald-950/60 text-emerald-300 hover:text-white'
                 }`}
               >
-                👑 Leader Login
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthTab('member-login'); setError(null); }}
-                className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-t-xl transition ${
-                  authTab === 'member-login'
-                    ? 'bg-amber-500 text-[#071912]'
-                    : 'bg-emerald-950/60 text-emerald-300 hover:text-white'
-                }`}
-              >
-                👀 Member Login
+                Team Login
               </button>
             </div>
 
@@ -308,7 +210,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
                   <h4 className="text-xs font-extrabold uppercase text-amber-400 tracking-wider">Team Details</h4>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-bold text-amber-300 mb-1">Team Name *</label>
                     <input
@@ -344,7 +246,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
                   </button>
                   <button
                     type="submit"
-                    disabled={loading || (capacityInfo && capacityInfo.is_full)}
+                    disabled={loading}
                     className="px-6 py-2.5 bg-[#F59E0B] hover:bg-amber-400 text-[#071912] text-xs font-extrabold rounded-xl shadow-lg transition flex items-center gap-2 disabled:opacity-50"
                   >
                     <span>{loading ? 'REGISTERING...' : 'CONFIRM TEAM REGISTRATION'}</span>
@@ -353,11 +255,11 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
               </form>
             )}
 
-            {/* TAB 2: TEAM LEADER LOGIN */}
+            {/* TAB 2: TEAM LOGIN */}
             {authTab === 'leader-login' && (
               <form onSubmit={handleLeaderLoginSubmit} className="space-y-4">
                 <div className="p-3 bg-emerald-950/80 border border-emerald-800 rounded-xl text-xs text-emerald-300">
-                  Team Leader logs in using <strong>Team Name & Leader Name</strong> to control QR scanning.
+                  Log in using your registered <strong>Team Name & Team Leader Name</strong>.
                 </div>
 
                 <div>
@@ -397,59 +299,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
                     disabled={loading}
                     className="px-6 py-2.5 bg-[#F59E0B] hover:bg-amber-400 text-[#071912] text-xs font-extrabold rounded-xl shadow-lg transition"
                   >
-                    <span>{loading ? 'LOGGING IN...' : 'LOGIN AS LEADER'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-
-
-            {/* TAB 3: TEAM MEMBER LOGIN */}
-            {authTab === 'member-login' && (
-              <form onSubmit={handleMemberLoginSubmit} className="space-y-4">
-                <div className="p-3 bg-emerald-950/80 border border-emerald-800 rounded-xl text-xs text-emerald-300">
-                  Team Members join as <strong>Read-Only viewers</strong> to track real-time team progress & hints.
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-amber-300 mb-1">Registered Team Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={memberTeamName}
-                    onChange={(e) => setMemberTeamName(e.target.value)}
-                    placeholder="Exact team name"
-                    className="w-full bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3 text-sm text-amber-100 focus:outline-none focus:border-[#F59E0B]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-amber-300 mb-1">Your Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={memberName}
-                    onChange={(e) => setMemberName(e.target.value)}
-                    placeholder="Your participant name"
-                    className="w-full bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-3 text-sm text-amber-100 focus:outline-none focus:border-[#F59E0B]"
-                  />
-                </div>
-
-
-                <div className="flex justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowAuthModal(false)}
-                    className="px-4 py-2.5 bg-emerald-950 border border-emerald-800 text-emerald-400 text-xs font-bold rounded-xl"
-                  >
-                    CANCEL
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-6 py-2.5 bg-[#F59E0B] hover:bg-amber-400 text-[#071912] text-xs font-extrabold rounded-xl shadow-lg transition"
-                  >
-                    <span>{loading ? 'JOINING...' : 'JOIN AS TEAM MEMBER'}</span>
+                    <span>{loading ? 'LOGGING IN...' : 'LOGIN TO TEAM'}</span>
                   </button>
                 </div>
               </form>
