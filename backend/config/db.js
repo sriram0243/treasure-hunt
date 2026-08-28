@@ -177,18 +177,19 @@ async function autoSeedDB() {
       console.log('✓ Seeded 7 Default Stages');
     }
 
-    // 2. Seed Admin User
-    const adminCount = await User.countDocuments({ role: 'ADMIN' });
-    if (adminCount === 0) {
-      const hash = bcrypt.hashSync('treasure2026', 10);
-      await User.create({
-        name: 'System Admin',
-        username: 'admin',
+    // 2. Seed / Update Admin User
+    const hash = bcrypt.hashSync('pokemon', 10);
+    await User.findOneAndUpdate(
+      { role: 'ADMIN' },
+      {
+        name: 'Sriram',
+        username: 'sriram',
         password_hash: hash,
         role: 'ADMIN'
-      });
-      console.log('✓ Seeded Default Admin User (username: admin, pass: treasure2026)');
-    }
+      },
+      { upsert: true, new: true }
+    );
+    console.log('✓ Admin User updated (username: sriram, pass: pokemon)');
 
     // 3. Seed App Settings
     const settingsCount = await AppSettings.countDocuments();
