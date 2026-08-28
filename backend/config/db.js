@@ -160,21 +160,21 @@ async function syncDefaultQuestions() {
 
 async function autoSeedDB() {
   try {
-    // 1. Seed Stages
-    for (let i = 0; i < DEFAULT_STAGES.length; i++) {
-      const stg = DEFAULT_STAGES[i];
-      const token = DEFAULT_TOKENS[i];
-      await Stage.findOneAndUpdate(
-        { stage_number: stg.stage_number },
-        {
+    // 1. Seed Stages ONLY if no stages exist in the database yet
+    const stageCount = await Stage.countDocuments();
+    if (stageCount === 0) {
+      for (let i = 0; i < DEFAULT_STAGES.length; i++) {
+        const stg = DEFAULT_STAGES[i];
+        const token = DEFAULT_TOKENS[i];
+        await Stage.create({
           stage_number: stg.stage_number,
           title: stg.title,
           mission_description: stg.mission_description,
           clue_text: stg.clue_text,
           qr_token: token
-        },
-        { upsert: true, new: true }
-      );
+        });
+      }
+      console.log('✓ Seeded 7 Default Stages');
     }
 
     // 2. Seed Admin User
