@@ -64,9 +64,12 @@ const AppSettings = require('../models/AppSettings');
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/treasure_hunt';
 
 async function connectDB() {
+  if (mongoose.connection.readyState >= 1) {
+    return;
+  }
   try {
     await mongoose.connect(MONGODB_URI);
-    console.log(`🍃 Connected to MongoDB database successfully: ${MONGODB_URI}`);
+    console.log(`🍃 Connected to MongoDB database successfully`);
     await autoSeedDB();
   } catch (err) {
     console.error('❌ MongoDB Connection Error:', err.message);

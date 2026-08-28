@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Scroll, Sparkles, CheckCircle2, AlertCircle, Save, X, Edit3, HelpCircle, Key, Layers } from 'lucide-react';
 import { api } from '../api/client';
 
-export default function StageManagerModal({ onClose }) {
+export default function StageManagerModal({ isOpen = true, onClose }) {
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
@@ -11,8 +11,12 @@ export default function StageManagerModal({ onClose }) {
   const [selectedStageNumber, setSelectedStageNumber] = useState(1);
 
   useEffect(() => {
-    fetchStages();
-  }, []);
+    if (isOpen) {
+      fetchStages();
+    }
+  }, [isOpen]);
+
+  if (isOpen === false) return null;
 
   const fetchStages = async () => {
     setLoading(true);
@@ -40,12 +44,13 @@ export default function StageManagerModal({ onClose }) {
   };
 
   const handleSaveStage = async (stage) => {
-    setSavingId(stage.id || stage.stage_number);
+    const targetId = stage._id || stage.id || stage.stage_number;
+    setSavingId(targetId);
     setSaveMessage(null);
     setErrorMessage(null);
 
     try {
-      const res = await api.updateStage(stage.id || stage.stage_number, {
+      const res = await api.updateStage(targetId, {
         title: stage.title,
         mission_description: stage.mission_description,
         clue_text: stage.clue_text
