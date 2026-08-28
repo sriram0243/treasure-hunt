@@ -517,6 +517,26 @@ exports.scanToken = async (req, res) => {
         scanned_stage: stageMatch.stage_number,
         required_stage: requiredStageObj.stage_number
       });
+    }    // STRICT STAGE 7 QUIZ CHECK: All teams MUST solve and pass the Stage 7 Quiz before scanning Stage 7 QR Code!
+    if ((requiredStageObj.stage_number === 7 || stageMatch.stage_number === 7) && !team.stage7_quiz_passed) {
+      await ScanAttempt.create({
+        team_id: team._id,
+        user_id: user.id,
+        team_name: team.team_name,
+        user_name: user.name,
+        role: user.role,
+        scanned_token: cleanToken,
+        is_success: false,
+        stage_number: 7,
+        message: 'STAGE7_QUIZ_LOCKED'
+      });
+
+      return res.status(400).json({
+        success: false,
+        code: 'STAGE7_QUIZ_LOCKED',
+        title: '🔒 STAGE 7 QUIZ LOCKED',
+        message: 'Your team MUST solve and pass the Stage 7 Challenge Question before you can scan the Stage 7 QR Code!'
+      });
     }
 
     // CORRECT QR SCAN! Record stage completion
@@ -615,9 +635,9 @@ exports.scanToken = async (req, res) => {
       if (io) {
         io.to(`team:${team._id}`).emit('stage_completed', {
           team_name: team.team_name,
-          completed_position: currentPosition,
+          position: currentPosition,
           next_position: nextPosition,
-          next_hint: nextStageData || null
+          is_final: false
         });
 
         io.to('admin').emit('team_progress_updated', {
@@ -629,18 +649,82 @@ exports.scanToken = async (req, res) => {
 
       return res.json({
         success: true,
-        code: 'STAGE_COMPLETED',
-        title: `✓ STAGE ${currentPosition} COMPLETED`,
-        message: `Stage ${stageMatch.stage_number} completed! Your next clue has been unlocked.`,
-        position_completed: currentPosition,
+        code: 'STAGE_UNLOCKED',
+        title: '✓ MARK UNLOCKED!',
+        message: 'Mark verified! Your next location hint has been unlocked below.',
+        is_final: false,
         stage_number: stageMatch.stage_number,
-        stage_title: stageMatch.title,
-        next_stage: nextStageData || null
+        next_stage: nextStageData ? {
+          stage_number: nextStageData.stage_number,
+          title: nextStageData.title,
+          mission_description: nextStageData.mission_description
+        } : null
       });
     }
   } catch (err) {
     console.error('Scan token error:', err);
-    res.status(500).json({ success: false, error: err.message || 'Scan verification error.' });
+    res.status(500).json({ success: false, error: err.message || 'QR code scan processing failed.' });
+  }
+};
+
+const db = require('../config/db');
+
+// GET Stage 7 Quiz Question (1 randomized question assigned per team from pool)
+exports.getStage7Quiz = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.team_id) {
+      return res.status(400).json({ success: false, error: 'Missing team authorization.' });
+    }
+
+    const team = await Team.findById(user.team_id);
+    if (!team) {
+      return res.status(404).json({ success: false, error: 'Team not found.' });
+    }
+
+    let allQuestions = await db.syncDefaultQuestions();
+    if (!allQuestions || allQuestions.length === 0) {
+      await Question.deleteMany({});
+      allQuestions = await Question.insertMany(db.DEFAULT_QUESTIONS);
+    }
+
+    let assignedQuestion = null;
+    if (team.stage7_question_id) {
+      assignedQuestion = allQuestions.find(q => String(q._id) === String(team.stage7_question_id));
+    }
+
+    // If no question assigned yet or assigned question was deleted, pick a random shuffled question from pool
+    if (!assignedQuestion && allQuestions.length > 0) {
+      const randomIndex = Math.floor(Math.random() * allQuestions.length);
+      assignedQuestion = allQuestions[randomIndex];
+      team.stage7_question_id = assignedQuestion._id;
+      await team.save();
+    }
+
+    if (!assignedQuestion && allQuestions.length > 0) {
+      assignedQuestion = allQuestions[0];
+    }
+
+    if (!assignedQuestion) {
+      return res.status(500).json({ success: false, error: 'No Stage 7 quiz questions available.' });
+    }
+
+    res.json({
+      success: true,
+      question: {
+        id: assignedQuestion._id,
+        question_text: assignedQuestion.question_text,
+        options: assignedQuestion.options
+      },
+      total_pool_questions: allQuestions.length,
+      quiz_passed: team.stage7_quiz_passed || false,
+      wrong_attempts: team.stage7_wrong_attempts || 0,
+      max_wrong_attempts: 2,
+      team_status: team.status
+    });
+  } catch (err) {
+    console.error('Get Stage 7 Quiz error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch Stage 7 Quiz question.' });
   }
 };
 

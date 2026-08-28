@@ -94,8 +94,17 @@ export default function Stage7QuizCard({ isLeader, onQuizSuccess, onQuizDisquali
 
   if (!question) {
     return (
-      <div className="p-6 bg-[#0D261E] border border-red-500 rounded-2xl text-center text-xs text-red-300">
-        No quiz questions available. Please contact event administrators.
+      <div className="p-6 bg-[#0D261E] border-2 border-amber-500/60 rounded-3xl text-center space-y-3 shadow-lg">
+        <p className="text-xs font-bold text-amber-200 uppercase tracking-wider">
+          Loading Stage 7 Challenge Question...
+        </p>
+        <button
+          type="button"
+          onClick={loadQuiz}
+          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-[#071912] text-xs font-black rounded-xl shadow-md transition transform active:scale-95 cursor-pointer"
+        >
+          RETRY LOADING QUESTION 🔄
+        </button>
       </div>
     );
   }
