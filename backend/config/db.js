@@ -80,53 +80,53 @@ const Question = require('../models/Question');
 
 const DEFAULT_QUESTIONS = [
   {
-    question_text: "What cardinal direction does a magnetic compass needle point toward?",
-    options: ["South", "North", "East", "West"],
+    question_text: "🧠 The Forgetful Learner\nI travel backward through many layers.\nWith every step, I become smaller and smaller,\nuntil the earliest layers barely learn anything.\nWhat problem am I?",
+    options: ["Overfitting", "Vanishing Gradient", "Data Leakage", "Class Imbalance"],
     correct_option_index: 1
   },
   {
-    question_text: "How many total stages must a team complete in this Treasure Hunt?",
-    options: ["5 Stages", "6 Stages", "7 Stages", "8 Stages"],
-    correct_option_index: 2
-  },
-  {
-    question_text: "Which campus location is traditionally known as the sanctuary where knowledge sleeps?",
-    options: ["Main Library", "Sports Complex", "Dining Hall", "Auditorium"],
-    correct_option_index: 0
-  },
-  {
-    question_text: "What key tool is required to scan physical marks at landmark locations?",
-    options: ["NFC Scanner", "QR Code Reader / Camera", "Bluetooth Radar", "Bar Code Wand"],
+    question_text: "👁️ The Watcher\nI don't read every word equally.\nWhen one word needs another, I decide how strongly they should be connected.\nI am the reason a Transformer can focus on the important parts of a sentence.\nWho am I?",
+    options: ["Pooling", "Self-Attention", "Dropout", "Clustering"],
     correct_option_index: 1
   },
   {
-    question_text: "What is the maximum number of wrong attempts allowed on this Stage 7 Quiz before team disqualification?",
-    options: ["1 Attempt", "2 Attempts", "3 Attempts", "5 Attempts"],
+    question_text: "🕵️ The Hidden Identity\n“The student dropped the glass because it was slippery.”\nI must discover what “it” represents.\nI don't translate it or tokenize it—I resolve its identity.\nWhat am I?",
+    options: ["Stemming", "Coreference Resolution", "Sentiment Analysis", "Tokenization"],
     correct_option_index: 1
   },
   {
-    question_text: "In nautical lore, what color flag is historically associated with pirate treasure ships?",
-    options: ["Jolly Roger (Black & Skull)", "Royal Blue", "Crimson Red", "Golden Yellow"],
-    correct_option_index: 0
-  },
-  {
-    question_text: "What primary role in the team is authorized to control QR scanning during the hunt?",
-    options: ["Any Team Member", "Team Leader Only", "Event Volunteer", "System Admin Only"],
+    question_text: "🎭 The Perfect Student\nI score almost perfectly on questions I've already seen.\nBut when you give me a new question, I struggle badly.\nI learned the examples rather than the underlying pattern.\nWhat happened to me?",
+    options: ["Underfitting", "Overfitting", "Normalization", "Regularization"],
     correct_option_index: 1
   },
   {
-    question_text: "What is the ancient unit of measure traditionally used by sailors to measure ocean depth?",
-    options: ["Fathom", "League", "Knot", "Cubits"],
+    question_text: "⚔️ The Two Rivals\nOne of us creates something that looks real.\nThe other tries to expose the fake.\nWe compete, but our competition makes the creator better.\nWhat are we?",
+    options: ["CNN", "GAN", "LSTM", "KNN"],
+    correct_option_index: 1
+  },
+  {
+    question_text: "🎯 The Rare Target\nImagine 1000 patients.\n990 are healthy and 10 have a disease.\nAn AI calls everyone healthy and proudly announces 99% accuracy.\nWhat hidden problem does this reveal?",
+    options: ["Class Imbalance", "Vanishing Gradient", "Data Augmentation", "Feature Scaling"],
     correct_option_index: 0
   },
   {
-    question_text: "Which instrument was historically used by maritime explorers to navigate using the stars?",
-    options: ["Sextant", "Barometer", "Thermometer", "Altimeter"],
+    question_text: "👻 The Confident Liar\nI can speak fluently.\nI can sound extremely confident.\nBut sometimes I create facts, people, or events that never existed.\nWhat am I demonstrating?",
+    options: ["AI Hallucination", "Transfer Learning", "Underfitting", "Clustering"],
     correct_option_index: 0
   },
   {
-    question_text: "What awaits the winning team at the final destination upon unlocking Stage 7?",
-    options: ["The Golden Treasure Chest", "A Silver Key", "A Wooden Scroll", "A Bronze Trophy"],
+    question_text: "🧩 The Memory Keeper\nI have gates but no doors.\nI can decide what information to forget, what to keep, and what to reveal.\nI am especially useful when information arrives as a sequence.\nWho am I?",
+    options: ["CNN", "LSTM", "PCA", "SVM"],
+    correct_option_index: 1
+  },
+  {
+    question_text: "🔓 The Accidental Cheat\nI was supposed to be tested on questions I had never seen.\nSomehow, information from those questions entered my learning process.\nMy score became suspiciously high.\nWhat went wrong?",
+    options: ["Data Leakage", "Dropout", "Underfitting", "Gradient Clipping"],
+    correct_option_index: 0
+  },
+  {
+    question_text: "👑 The Shape Shifter — FINAL\nTwo groups cannot be separated by a simple straight line.\nInstead of forcing the line to change, I secretly change the space in which the data is viewed.\nSuddenly, separation becomes possible.\nWhat trick am I using?",
+    options: ["Kernel Trick", "Dropout", "Backpropagation", "One-Hot Encoding"],
     correct_option_index: 0
   }
 ];
@@ -184,12 +184,10 @@ async function autoSeedDB() {
       console.log('✓ Seeded Global Hunt State (LIVE)');
     }
 
-    // 5. Seed Stage 7 Quiz Questions
-    const questionCount = await Question.countDocuments();
-    if (questionCount === 0) {
-      await Question.insertMany(DEFAULT_QUESTIONS);
-      console.log('✓ Seeded 10 Default Stage 7 Quiz Questions');
-    }
+    // 5. Seed Stage 7 Quiz Questions (Clear old questions and insert new 10 Stage 7 questions)
+    await Question.deleteMany({});
+    await Question.insertMany(DEFAULT_QUESTIONS);
+    console.log('✓ Seeded 10 New Stage 7 AI Riddle Quiz Questions');
   } catch (err) {
     console.error('Auto seed error:', err.message);
   }

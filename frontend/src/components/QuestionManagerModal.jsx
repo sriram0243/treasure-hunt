@@ -260,7 +260,7 @@ export default function QuestionManagerModal({ isOpen, onClose }) {
                     <span className="px-2.5 py-0.5 bg-amber-500/20 text-amber-300 font-extrabold text-[11px] rounded-lg border border-amber-500/30">
                       Q{idx + 1}
                     </span>
-                    <h5 className="text-xs font-bold text-amber-100">{q.question_text}</h5>
+                    <h5 className="text-xs font-bold text-amber-100 whitespace-pre-line">{q.question_text}</h5>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">

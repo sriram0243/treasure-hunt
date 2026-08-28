@@ -142,7 +142,7 @@ export default function Stage7QuizCard({ isLeader, onQuizSuccess, onQuizDisquali
             <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-400 text-amber-300 font-extrabold text-sm flex items-center justify-center shrink-0">
               <HelpCircle className="w-5 h-5" />
             </div>
-            <h4 className="text-base md:text-lg font-bold text-amber-100 leading-snug">
+            <h4 className="text-base md:text-lg font-bold text-amber-100 leading-snug whitespace-pre-line">
               {question.question_text}
             </h4>
           </div>
