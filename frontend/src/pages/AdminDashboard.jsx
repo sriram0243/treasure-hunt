@@ -202,7 +202,7 @@ export default function AdminDashboard({ onOpenQRManagement }) {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. sriram"
+                placeholder="Enter admin username"
                 className="w-full bg-emerald-950 border border-emerald-800 rounded-xl px-4 py-2.5 text-xs text-amber-100 focus:outline-none focus:border-[#F59E0B]"
               />
             </div>
