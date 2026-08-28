@@ -131,6 +131,33 @@ const DEFAULT_QUESTIONS = [
   }
 ];
 
+async function syncDefaultQuestions() {
+  try {
+    const existing = await Question.find();
+    // Check if DB is empty or still contains old questions
+    const isOldSet = existing.length === 0 || existing.some(q => 
+      q.question_text.includes("cardinal direction") ||
+      q.question_text.includes("magnetic compass") ||
+      q.question_text.includes("How many total stages") ||
+      q.question_text.includes("sanctuary where knowledge sleeps") ||
+      q.question_text.includes("maximum number of wrong attempts") ||
+      q.question_text.includes("Jolly Roger")
+    );
+
+    if (isOldSet) {
+      console.log('🔄 Syncing Stage 7 Quiz Questions: Purging old questions and inserting 10 new AI riddles...');
+      await Question.deleteMany({});
+      const newQuestions = await Question.insertMany(DEFAULT_QUESTIONS);
+      console.log('✓ Successfully synced 10 new Stage 7 AI Riddle questions to MongoDB');
+      return newQuestions;
+    }
+    return existing;
+  } catch (err) {
+    console.error('Error syncing quiz questions:', err.message);
+    return [];
+  }
+}
+
 async function autoSeedDB() {
   try {
     // 1. Seed Stages
@@ -185,9 +212,7 @@ async function autoSeedDB() {
     }
 
     // 5. Seed Stage 7 Quiz Questions (Clear old questions and insert new 10 Stage 7 questions)
-    await Question.deleteMany({});
-    await Question.insertMany(DEFAULT_QUESTIONS);
-    console.log('✓ Seeded 10 New Stage 7 AI Riddle Quiz Questions');
+    await syncDefaultQuestions();
   } catch (err) {
     console.error('Auto seed error:', err.message);
   }
@@ -196,3 +221,5 @@ async function autoSeedDB() {
 connectDB();
 
 module.exports = mongoose.connection;
+module.exports.syncDefaultQuestions = syncDefaultQuestions;
+module.exports.DEFAULT_QUESTIONS = DEFAULT_QUESTIONS;

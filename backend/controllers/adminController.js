@@ -451,13 +451,26 @@ exports.updateStage = async (req, res) => {
   }
 };
 
+const db = require('../config/db');
+
 // GET All Quiz Questions (Admin)
 exports.getAllQuestions = async (req, res) => {
   try {
-    const questions = await Question.find().sort({ created_at: 1 });
+    const questions = await db.syncDefaultQuestions();
     res.json({ success: true, questions: questions || [] });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message || 'Failed to fetch questions.' });
+  }
+};
+
+// RESET All Quiz Questions to 10 Default AI Riddles (Admin)
+exports.resetQuestions = async (req, res) => {
+  try {
+    await Question.deleteMany({});
+    const questions = await Question.insertMany(db.DEFAULT_QUESTIONS);
+    res.json({ success: true, message: 'Successfully reset all Stage 7 quiz questions to default 10 AI riddles.', questions });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to reset questions.' });
   }
 };
 

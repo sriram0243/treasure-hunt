@@ -22,6 +22,7 @@ router.put('/stages/:id', requireAdmin, adminController.updateStage);
 // Stage 7 Quiz Questions Management (Admin)
 router.get('/questions', requireAdmin, adminController.getAllQuestions);
 router.post('/questions', requireAdmin, adminController.addQuestion);
+router.post('/questions/reset', requireAdmin, adminController.resetQuestions);
 router.put('/questions/:id', requireAdmin, adminController.updateQuestion);
 router.delete('/questions/:id', requireAdmin, adminController.deleteQuestion);
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { HelpCircle, Plus, Trash2, Edit3, CheckCircle2, AlertCircle, X, Save } from 'lucide-react';
+import { HelpCircle, Plus, Trash2, Edit3, CheckCircle2, AlertCircle, X, Save, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function QuestionManagerModal({ isOpen, onClose }) {
@@ -31,6 +31,25 @@ export default function QuestionManagerModal({ isOpen, onClose }) {
       }
     } catch (err) {
       setError(err.message || 'Failed to load questions.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetDefaultQuestions = async () => {
+    if (!window.confirm('Are you sure you want to reset all Stage 7 questions to the 10 new default AI riddles?')) return;
+    setLoading(true);
+    try {
+      const res = await api.resetQuestions();
+      if (res.success) {
+        setSuccessMsg('Successfully reset all questions to the 10 new AI riddles!');
+        fetchQuestions();
+        setTimeout(() => setSuccessMsg(null), 3000);
+      } else {
+        setError(res.error || 'Failed to reset questions.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to reset questions.');
     } finally {
       setLoading(false);
     }
@@ -154,19 +173,30 @@ export default function QuestionManagerModal({ isOpen, onClose }) {
           </div>
         )}
 
-        {/* Add Question Button */}
+        {/* Action Bar */}
         {!showForm && (
-          <div className="flex justify-between items-center bg-emerald-950/50 p-4 rounded-2xl border border-emerald-800">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-emerald-950/50 p-4 rounded-2xl border border-emerald-800">
             <span className="text-xs text-amber-300 font-bold">
               Teams must solve all questions correctly to unlock Stage 7 QR scanning.
             </span>
-            <button
-              onClick={handleOpenAddForm}
-              className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-[#071912] text-xs font-black rounded-xl shadow-md transition transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>ADD NEW QUESTION</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleResetDefaultQuestions}
+                className="px-3 py-2 bg-emerald-900 hover:bg-emerald-800 text-amber-300 border border-emerald-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>RESET 10 AI RIDDLES</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenAddForm}
+                className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-[#071912] text-xs font-black rounded-xl shadow-md transition transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>ADD NEW QUESTION</span>
+              </button>
+            </div>
           </div>
         )}
 

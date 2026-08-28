@@ -141,6 +141,11 @@ export const api = {
   // Admin Question CRUD
   getQuestions: () => fetchJson('/admin/questions'),
 
+  resetQuestions: () =>
+    fetchJson('/admin/questions/reset', {
+      method: 'POST'
+    }),
+
   addQuestion: (data) =>
     fetchJson('/admin/questions', {
       method: 'POST',

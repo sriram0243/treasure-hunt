@@ -783,6 +783,8 @@ exports.resetTeamProgress = async (req, res) => {
   }
 };
 
+const db = require('../config/db');
+
 // GET Stage 7 Quiz Question (1 randomized question assigned per team from pool)
 exports.getStage7Quiz = async (req, res) => {
   try {
@@ -796,7 +798,7 @@ exports.getStage7Quiz = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Team not found.' });
     }
 
-    const allQuestions = await Question.find();
+    const allQuestions = await db.syncDefaultQuestions();
     if (!allQuestions || allQuestions.length === 0) {
       return res.status(400).json({ success: false, error: 'No Stage 7 quiz questions configured.' });
     }
