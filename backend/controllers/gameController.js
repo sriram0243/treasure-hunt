@@ -724,3 +724,59 @@ exports.submitFeedback = async (req, res) => {
     res.status(500).json({ success: false, error: err.message || 'Failed to record feedback.' });
   }
 };
+
+// Reset Team Progress (Anti-cheat restriction trigger when leader leaves page/exits fullscreen)
+exports.resetTeamProgress = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.team_id) {
+      return res.status(400).json({ success: false, error: 'Missing team authorization.' });
+    }
+
+    const team = await Team.findById(user.team_id);
+    if (!team) {
+      return res.status(404).json({ success: false, error: 'Team record not found.' });
+    }
+
+    // Reset progress to stage 1
+    team.completed_stages = [];
+    team.status = 'ACTIVE';
+    team.completed_at = null;
+    await team.save();
+
+    await ScanAttempt.create({
+      team_id: team._id,
+      user_id: user.id,
+      team_name: team.team_name,
+      user_name: user.name,
+      role: user.role,
+      scanned_token: 'ANTI_CHEAT_RESET',
+      is_success: false,
+      message: 'LEADER_LEFT_PAGE_PROGRESS_RESET'
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`team:${team._id}`).emit('team_progress_reset', {
+        team_id: team._id,
+        team_name: team.team_name,
+        reason: 'Leader left page, switched tabs, or exited fullscreen mode.'
+      });
+      io.to('admin').emit('team_progress_updated', {
+        team_id: team._id,
+        team_name: team.team_name,
+        completed_stages: 0
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Team progress has been reset back to Stage 1 due to anti-cheat violation.',
+      current_position: 1
+    });
+  } catch (err) {
+    console.error('Reset team progress error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to reset team progress.' });
+  }
+};
+

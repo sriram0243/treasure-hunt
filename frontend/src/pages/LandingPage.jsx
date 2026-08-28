@@ -41,6 +41,17 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
     }
   };
 
+  const tryEnterFullscreen = () => {
+    try {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen().catch(() => {});
+      } else if (elem.webkitRequestFullscreen) {
+        elem.webkitRequestFullscreen().catch(() => {});
+      }
+    } catch (e) {}
+  };
+
   // Submit Team Registration
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
@@ -61,6 +72,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
       const res = await api.registerTeam(payload);
       if (res.success && res.token) {
         localStorage.setItem('th_jwt_token', res.token);
+        tryEnterFullscreen();
         onStartHunt(res.user);
         setShowAuthModal(false);
       } else {
@@ -88,6 +100,7 @@ export default function LandingPage({ onStartHunt, onOpenGuide, userSession }) {
       const res = await api.loginUser(loginTeamName.trim(), loginLeaderName.trim());
       if (res.success && res.token) {
         localStorage.setItem('th_jwt_token', res.token);
+        tryEnterFullscreen();
         onStartHunt(res.user);
         setShowAuthModal(false);
       } else {

@@ -65,6 +65,12 @@ export const api = {
       body: JSON.stringify({ qr_token })
     }),
 
+  // Reset Team Progress (Anti-cheat trigger)
+  resetTeamProgress: () =>
+    fetchJson('/game/reset-progress', {
+      method: 'POST'
+    }),
+
   // Feedback
   submitFeedback: (payload) =>
     fetchJson('/game/feedback', {

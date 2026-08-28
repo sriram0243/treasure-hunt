@@ -19,6 +19,9 @@ router.get('/team-progress', requireAuth, gameController.getTeamProgress);
 // QR Scan & Stage Unlock (Strictly Requires Team Leader)
 router.post('/scan', requireTeamLeader, gameController.scanToken);
 
+// Anti-Cheat Progress Reset (When Leader leaves page / exits fullscreen)
+router.post('/reset-progress', requireAuth, gameController.resetTeamProgress);
+
 // Participant Feedback
 router.post('/feedback', requireAuth, gameController.submitFeedback);
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Camera, MapPin, Sparkles, AlertOctagon, CheckCircle2, RefreshCw, Scroll, ShieldCheck, Compass, Lock, Eye, Crown, Users } from 'lucide-react';
 import ProgressBar from '../components/ProgressBar';
 import ScannerModal from '../components/ScannerModal';
@@ -13,6 +13,11 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scanResultModal, setScanResultModal] = useState(null);
   const [realtimeNotice, setRealtimeNotice] = useState(null);
+
+  // Anti-Cheat & Restriction States
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  const [antiCheatViolationModal, setAntiCheatViolationModal] = useState(null);
+  const isResettingRef = useRef(false);
 
   useEffect(() => {
     fetchLatestProgress();
@@ -52,11 +57,21 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
       fetchLatestProgress();
     };
 
+    const handleTeamProgressReset = (data) => {
+      console.log('⚠️ Real-time team_progress_reset event received:', data);
+      fetchLatestProgress();
+      playScanErrorSound();
+      setAntiCheatViolationModal(
+        data.reason || 'Your team\'s progress has been reset back to Stage 1 due to anti-cheat enforcement.'
+      );
+    };
+
     socket.on('stage_completed', handleStageCompleted);
     socket.on('wrong_qr_scan', handleWrongScan);
     socket.on('hunt_winner_declared', handleWinnerDeclared);
     socket.on('hunt_closed', handleWinnerDeclared);
     socket.on('stage_updated', handleStageUpdated);
+    socket.on('team_progress_reset', handleTeamProgressReset);
 
     return () => {
       socket.off('stage_completed', handleStageCompleted);
@@ -64,6 +79,7 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
       socket.off('hunt_winner_declared', handleWinnerDeclared);
       socket.off('hunt_closed', handleWinnerDeclared);
       socket.off('stage_updated', handleStageUpdated);
+      socket.off('team_progress_reset', handleTeamProgressReset);
     };
   }, [userSession]);
 
@@ -83,6 +99,147 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
       setLoading(false);
     }
   };
+
+  const isLeader = progressData?.role === 'TEAM_LEADER' || userSession?.role === 'TEAM_LEADER';
+
+  // Request Fullscreen Helper
+  const requestFullscreenMode = async () => {
+    try {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        await elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) {
+        await elem.msRequestFullscreen();
+      }
+      setIsFullscreen(true);
+    } catch (err) {
+      console.warn('Fullscreen request could not be completed:', err);
+    }
+  };
+
+  // 1. Fullscreen Change Monitor
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const inFull = !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement
+      );
+      setIsFullscreen(inFull);
+
+      // If Leader exits fullscreen while game is active, trigger anti-cheat reset!
+      if (isLeader && !inFull && !progressData?.is_completed) {
+        triggerAntiCheatReset('Exited required Fullscreen mode');
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+    };
+  }, [isLeader, progressData?.is_completed]);
+
+  // 2. Anti-Cheat: Disable Copy, Cut, Paste, Right-Click, Selection, Shortcuts (LEADER ONLY)
+  useEffect(() => {
+    if (!isLeader) return;
+
+    const blockEvent = (e) => {
+      // Allow input typing if inside an input box, but block copy/cut/paste
+      if (e.type === 'copy' || e.type === 'cut' || e.type === 'paste' || e.type === 'contextmenu' || e.type === 'selectstart' || e.type === 'dragstart') {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    const handleKeydown = (e) => {
+      const key = e.key ? e.key.toLowerCase() : '';
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Block Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A, Ctrl+U, Ctrl+P, Ctrl+S, F12, Ctrl+Shift+I/J/C
+      if (
+        (isCtrlOrCmd && ['c', 'v', 'x', 'a', 'u', 'p', 's'].includes(key)) ||
+        e.key === 'F12' ||
+        (isCtrlOrCmd && e.shiftKey && ['i', 'j', 'c'].includes(key))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    document.addEventListener('copy', blockEvent);
+    document.addEventListener('cut', blockEvent);
+    document.addEventListener('paste', blockEvent);
+    document.addEventListener('contextmenu', blockEvent);
+    document.addEventListener('selectstart', blockEvent);
+    document.addEventListener('dragstart', blockEvent);
+    document.addEventListener('keydown', handleKeydown, true);
+
+    return () => {
+      document.removeEventListener('copy', blockEvent);
+      document.removeEventListener('cut', blockEvent);
+      document.removeEventListener('paste', blockEvent);
+      document.removeEventListener('contextmenu', blockEvent);
+      document.removeEventListener('selectstart', blockEvent);
+      document.removeEventListener('dragstart', blockEvent);
+      document.removeEventListener('keydown', handleKeydown, true);
+    };
+  }, [isLeader]);
+
+  // 3. Anti-Cheat: Tab Switch / Leaving Page / Window Blur (LEADER ONLY)
+  const triggerAntiCheatReset = async (reason) => {
+    if (isResettingRef.current || progressData?.is_completed) return;
+    isResettingRef.current = true;
+
+    console.warn('⚠️ Anti-cheat reset triggered:', reason);
+    playScanErrorSound();
+
+    setAntiCheatViolationModal(
+      `⚠️ ANTI-CHEAT VIOLATION DETECTED!\n\nReason: ${reason}\n\nYour team's progress has been reset back to Stage 1!`
+    );
+
+    try {
+      await api.resetTeamProgress();
+      fetchLatestProgress();
+    } catch (err) {
+      console.error('Failed to trigger anti-cheat reset on backend:', err);
+    } finally {
+      setTimeout(() => {
+        isResettingRef.current = false;
+      }, 2500);
+    }
+  };
+
+  useEffect(() => {
+    if (!isLeader) return;
+
+    // Visibility change (tab switch, window minimization)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        triggerAntiCheatReset('Switched browser tab or minimized window');
+      }
+    };
+
+    // Window blur (leaving window / switching application)
+    const handleWindowBlur = () => {
+      triggerAntiCheatReset('Left game page / lost window focus');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [isLeader, progressData?.is_completed]);
 
   const handleQRScanSuccess = async (qrTokenStr) => {
     setIsScannerOpen(false);
@@ -139,7 +296,6 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
     );
   }
 
-  const isLeader = progressData?.role === 'TEAM_LEADER';
   const teamInfo = progressData?.team || {};
   const currentPos = progressData?.current_position || 1;
   const currentHint = progressData?.current_hint || {};
@@ -148,8 +304,83 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
   const members = progressData?.members || [];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+    <div className={`max-w-4xl mx-auto px-4 py-6 space-y-6 ${isLeader ? 'select-none' : ''}`}>
       
+      {/* FULLSCREEN & ANTI-CHEAT MANDATORY OVERLAY FOR LEADER */}
+      {isLeader && !isFullscreen && !progressData?.is_completed && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center select-none">
+          <div className="max-w-md w-full bg-[#0D261E] border-2 border-amber-500 rounded-3xl p-8 shadow-[0_0_50px_rgba(245,158,11,0.4)] space-y-6 animate-fade-in">
+            <div className="w-20 h-20 bg-amber-500/20 border-2 border-amber-400 rounded-full flex items-center justify-center mx-auto text-amber-400 animate-pulse">
+              <ShieldCheck className="w-10 h-10" />
+            </div>
+
+            <div>
+              <h3 className="text-2xl font-black font-heading text-amber-200 uppercase tracking-wider">
+                LEADER ANTI-CHEAT MODE
+              </h3>
+              <p className="text-xs text-emerald-200/90 mt-2 leading-relaxed">
+                Restrictions are active for Team Leaders! Fullscreen mode, copy/paste protection, and page integrity controls are enforced. Switching tabs, leaving the page, or exiting fullscreen will reset your team's progress back to Stage 1.
+              </p>
+            </div>
+
+            <button
+              onClick={requestFullscreenMode}
+              className="w-full py-4 bg-gradient-to-r from-amber-500 via-amber-400 to-[#FBBF24] hover:brightness-110 text-[#071912] font-heading font-extrabold text-sm md:text-base rounded-2xl shadow-[0_0_25px_rgba(245,158,11,0.5)] border border-amber-200 transition-all transform active:scale-95 flex items-center justify-center space-x-2 cursor-pointer"
+            >
+              <Sparkles className="w-5 h-5 fill-current" />
+              <span>ENTER FULLSCREEN TO PLAY & UNLOCK SCANNER 🚀</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ANTI-CHEAT VIOLATION NOTIFICATION MODAL */}
+      {antiCheatViolationModal && (
+        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-[#1A0909] border-2 border-red-500 rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(239,68,68,0.5)] space-y-5">
+            <div className="w-16 h-16 bg-red-950 border-2 border-red-500 rounded-full flex items-center justify-center mx-auto text-red-500 animate-bounce">
+              <AlertOctagon className="w-10 h-10" />
+            </div>
+
+            <h3 className="text-xl font-black font-heading text-red-200 uppercase tracking-wider">
+              ANTI-CHEAT VIOLATION!
+            </h3>
+
+            <div className="p-4 bg-black/70 rounded-xl border border-red-800 text-xs text-red-100 leading-relaxed font-mono whitespace-pre-line text-left">
+              {antiCheatViolationModal}
+            </div>
+
+            <button
+              onClick={() => {
+                setAntiCheatViolationModal(null);
+                requestFullscreenMode();
+              }}
+              className="w-full py-3.5 bg-red-600 hover:bg-red-500 text-white font-heading font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg transition transform active:scale-95 cursor-pointer"
+            >
+              RESTART HUNT FROM STAGE 1 🔄
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Leader Anti-Cheat Active Header Banner */}
+      {isLeader && (
+        <div className="bg-amber-950/80 border border-amber-500/60 p-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-amber-200 shadow-md">
+          <div className="flex items-center space-x-2">
+            <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+            <span>
+              <strong>ANTI-CHEAT ACTIVE:</strong> Fullscreen Enforced • Copy/Paste Disabled • Leaving Page Resets Hunt
+            </span>
+          </div>
+          <button
+            onClick={requestFullscreenMode}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-[#071912] font-extrabold text-[11px] rounded-lg transition shrink-0 shadow-sm"
+          >
+            {isFullscreen ? 'FULLSCREEN ACTIVE 🟢' : 'ENABLE FULLSCREEN 🔴'}
+          </button>
+        </div>
+      )}
+
       {/* Team Header */}
       <div className="bg-[#0D261E]/90 border border-[#F59E0B]/40 p-5 rounded-3xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -358,4 +589,3 @@ export default function GameView({ userSession, onGameCompleted, setUserSession 
     </div>
   );
 }
-
