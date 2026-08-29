@@ -514,7 +514,7 @@ exports.scanToken = async (req, res) => {
         success: false,
         code: 'WRONG_MARK',
         title: '⚠ WRONG MARK',
-        message: `Your team's next destination lies elsewhere. You scanned ${stageMatch.title || 'a different location'}, but your next objective is ${requiredStage ? requiredStage.title : 'your current target'}.`,
+        message: null,
         scanned_stage: stageMatch.stage_number,
         required_stage: requiredStageObj.stage_number
       });

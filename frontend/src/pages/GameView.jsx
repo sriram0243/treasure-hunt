@@ -305,8 +305,8 @@ export default function GameView({ userSession, onGameCompleted, setUserSession,
         setScanResultModal({
           type: 'error',
           code: res.code,
-          title: res.title || '⚠ SCAN FAILED',
-          message: res.message || 'The scanned mark could not be verified for your current location.'
+          title: res.title || '⚠ WRONG MARK',
+          message: res.code === 'WRONG_MARK' ? null : (res.message || 'The scanned mark could not be verified for your current location.')
         });
       }
     } catch (err) {
@@ -656,9 +656,11 @@ export default function GameView({ userSession, onGameCompleted, setUserSession,
               {scanResultModal.title}
             </h3>
 
-            <p className="text-xs md:text-sm text-emerald-200 leading-relaxed bg-emerald-950/80 p-4 rounded-xl border border-emerald-900">
-              {scanResultModal.message}
-            </p>
+            {scanResultModal.message && (
+              <p className="text-xs md:text-sm text-emerald-200 leading-relaxed bg-emerald-950/80 p-4 rounded-xl border border-emerald-900">
+                {scanResultModal.message}
+              </p>
+            )}
 
             <button
               onClick={() => setScanResultModal(null)}
